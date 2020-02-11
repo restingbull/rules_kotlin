@@ -39,6 +39,9 @@ kt_jvm_import(
         "annotation-processing",
         "annotation-processing-runtime",
         "compiler",
+        "daemon",
+        "daemon-client",
+        "daemon-client-new",
     ]
 ]
 

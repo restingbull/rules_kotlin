@@ -1,0 +1,21 @@
+load("//kotlin:kotlin.bzl", "kt_jvm_library")
+
+kt_jvm_library(
+    name = "daemon",
+    srcs = [
+        "KtDaemon.kt"
+    ],
+    deps = [
+        "@com_github_jetbrains_kotlin//:kotlin-daemon",
+    ]
+)
+
+kt_jvm_library(
+    name = "client",
+    srcs = [
+        "KtClient.kt"
+    ],
+    deps = [
+        "@com_github_jetbrains_kotlin//:kotlin-daemon-client-new",
+    ]
+)
