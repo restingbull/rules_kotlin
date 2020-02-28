@@ -13,6 +13,8 @@
 # limitations under the License.
 load(
     "//kotlin/internal:defs.bzl",
+    _JAVA_RUNTIME_TOOLCHAIN_TYPE = "JAVA_RUNTIME_TOOLCHAIN_TYPE",
+    _JAVA_TOOLCHAIN_TYPE = "JAVA_TOOLCHAIN_TYPE",
     _KtJvmInfo = "KtJvmInfo",
     _TOOLCHAIN_TYPE = "TOOLCHAIN_TYPE",
 )
@@ -27,7 +29,7 @@ load(
 )
 
 # INTERNAL ACTIONS #####################################################################################################
-def _fold_jars_action(ctx, rule_kind, output_jar, input_jars):
+def _fold_jars_action(ctx, rule_kind, output_jar, input_jars, action_type = ""):
     """Set up an action to Fold the input jars into a normalized output jar."""
     args = ctx.actions.args()
     args.add_all([
@@ -42,12 +44,16 @@ def _fold_jars_action(ctx, rule_kind, output_jar, input_jars):
     args.add("--output", output_jar)
     args.add_all(input_jars, before_each = "--sources")
     ctx.actions.run(
-        mnemonic = "KotlinFoldJars",
+        mnemonic = "KotlinFoldJars" + action_type,
         inputs = input_jars,
         outputs = [output_jar],
         executable = ctx.executable._singlejar,
         arguments = [args],
-        progress_message = "Merging Kotlin output jar %s from %d inputs" % (ctx.label, len(input_jars)),
+        progress_message = "Merging Kotlin output jar %s%s from %d inputs" % (
+            ctx.label,
+            "" if not action_type else " (%s)" % action_type,
+            len(input_jars),
+        ),
     )
 
 _CONVENTIONAL_RESOURCE_PATHS = [
@@ -154,6 +160,8 @@ def _compiler_toolchains(ctx):
     """Creates a struct of the relevant compilation toolchains"""
     return struct(
         kt = ctx.toolchains[_TOOLCHAIN_TYPE],
+        java = ctx.toolchains[_JAVA_TOOLCHAIN_TYPE],
+        java_runtime = ctx.toolchains[_JAVA_RUNTIME_TOOLCHAIN_TYPE],
     )
 
 def _compiler_friends(ctx, friends):
@@ -220,6 +228,52 @@ def kt_jvm_compile_action(ctx, rule_kind, output_jar):
     friend = _compiler_friends(ctx, friends = getattr(ctx.attr, "friends", []))
     compile_deps = _compiler_deps(toolchains, friend, deps = ctx.attr.deps)
     plugins = _plugin_mappers.targets_to_kt_plugins(ctx.attr.plugins + ctx.attr.deps)
+
+    compile_jar = output_jar
+
+    if toolchains.kt.experimental_use_abi_jars:
+        kt_compile_jar = ctx.actions.declare_file(ctx.label.name + "-kt.ijar")
+        _run_kt_builder_action(
+            ctx = ctx,
+            rule_kind = rule_kind,
+            toolchains = toolchains,
+            dirs = dirs,
+            srcs = srcs,
+            friend = friend,
+            compile_deps = compile_deps,
+            plugins = plugins,
+            outputs = {
+                "abijar": compile_jar,
+            },
+        )
+        if not srcs.java:
+            compile_jar = kt_compile_jar
+        else:
+            java_compile_jar = ctx.actions.declare_file(ctx.label.name + "-java.ijar")
+            java_info = java_common.compile(
+                ctx = ctx,
+                source_files = srcs.java,
+                output = java_compile_jar,
+                deps = compile_deps.deps + [compile_jar],
+                java_toolchain = toolchains.java_toolchain,
+                host_javabase = toolchains.javaruntime_toolchain,
+            )
+            compile_jar = ctx.actions.declare_file(ctx.label.name + ".ijar")
+            _fold_jars_action(
+                ctx,
+                rule_kind = rule_kind,
+                output_jar = compile_jar,
+                action_type = "Abi",
+                intput_jars = [
+                    kt_compile_jar,
+                    java_common.run_ijar(
+                        ctx,
+                        target_label = ctx.label,
+                        jar = java_compile_jar,
+                    ),
+                ],
+            )
+
     _run_kt_builder_action(
         ctx = ctx,
         rule_kind = rule_kind,
@@ -233,13 +287,13 @@ def kt_jvm_compile_action(ctx, rule_kind, output_jar):
             "output": output_jar,
             "kotlin_output_jdeps": ctx.outputs.jdeps,
             "kotlin_output_srcjar": ctx.outputs.srcjar,
-        }
+        },
     )
 
     return struct(
         java = JavaInfo(
             output_jar = ctx.outputs.jar,
-            compile_jar = ctx.outputs.jar,
+            compile_jar = compile_jar,
             source_jar = ctx.outputs.srcjar,
             #  jdeps = ctx.outputs.jdeps,
             deps = compile_deps.deps,
@@ -262,7 +316,6 @@ def kt_jvm_compile_action(ctx, rule_kind, output_jar):
             ),
         ),
     )
-
 
 def _run_kt_builder_action(ctx, rule_kind, toolchains, dirs, srcs, friend, compile_deps, plugins, outputs):
     """Creates a KotlinBuilder action invocation."""
@@ -319,8 +372,6 @@ def _run_kt_builder_action(ctx, rule_kind, toolchains, dirs, srcs, friend, compi
             "LC_CTYPE": "en_US.UTF-8",  # For Java source files
         },
     )
-
-
 
 def kt_jvm_produce_jar_actions(ctx, rule_kind):
     """Setup The actions to compile a jar and if any resources or resource_jars were provided to merge these in with the

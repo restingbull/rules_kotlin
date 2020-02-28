@@ -92,6 +92,8 @@ kt_jvm_binary(
 
 load(
     "//kotlin/internal:defs.bzl",
+    _JAVA_RUNTIME_TOOLCHAIN_TYPE = "JAVA_RUNTIME_TOOLCHAIN_TYPE",
+    _JAVA_TOOLCHAIN_TYPE = "JAVA_TOOLCHAIN_TYPE",
     _KT_COMPILER_REPO = "KT_COMPILER_REPO",
     _KtJvmInfo = "KtJvmInfo",
     _TOOLCHAIN_TYPE = "TOOLCHAIN_TYPE",
@@ -225,11 +227,17 @@ _common_outputs = dict(
     srcjar = "%{name}-sources.jar",
 )
 
+_common_toolchains = [
+    _TOOLCHAIN_TYPE,
+    _JAVA_TOOLCHAIN_TYPE,
+    _JAVA_RUNTIME_TOOLCHAIN_TYPE,
+]
+
 kt_jvm_library = rule(
     doc = """This rule compiles and links Kotlin and Java sources into a .jar file.""",
     attrs = _lib_common_attr,
     outputs = _common_outputs,
-    toolchains = [_TOOLCHAIN_TYPE],
+    toolchains = _common_toolchains,
     implementation = _kt_jvm_library_impl,
     provides = [JavaInfo, _KtJvmInfo],
 )
@@ -250,7 +258,7 @@ kt_jvm_binary = rule(
     }.items()),
     executable = True,
     outputs = _common_outputs,
-    toolchains = [_TOOLCHAIN_TYPE],
+    toolchains = _common_toolchains,
     implementation = _kt_jvm_binary_impl,
 )
 
@@ -281,7 +289,7 @@ kt_jvm_test = rule(
     executable = True,
     outputs = _common_outputs,
     test = True,
-    toolchains = [_TOOLCHAIN_TYPE],
+    toolchains = _common_toolchains,
     implementation = _kt_jvm_junit_test_impl,
 )
 
