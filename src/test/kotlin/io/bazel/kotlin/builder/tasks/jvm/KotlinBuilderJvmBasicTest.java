@@ -62,6 +62,17 @@ public class KotlinBuilderJvmBasicTest {
   }
 
   @Test
+  public void testGeneratesJDeps() {
+    ctx.runCompileTask(
+        c -> {
+          c.addSource("AClass.kt", "package something;" + "class AClass{}");
+          c.addSource("AnotherClass.java", "package something;", "", "class AnotherClass{}");
+          // declaring outputJdeps also asserts existance after compile.
+          c.outputJar().outputSrcJar().outputJdeps();
+        });
+  }
+
+  @Test
   public void testKotlinErrorRendering() {
     ctx.runFailingCompileTaskAndValidateOutput(
         () ->
