@@ -15,8 +15,8 @@
  */
 package io.bazel.kotlin.builder.tasks.jvm
 
-import io.bazel.kotlin.builder.toolchain.KotlinToolchain
 import io.bazel.kotlin.builder.toolchain.CompilationTaskContext
+import io.bazel.kotlin.builder.toolchain.KotlinToolchain
 import io.bazel.kotlin.builder.utils.addAll
 import io.bazel.kotlin.builder.utils.joinedClasspath
 import io.bazel.kotlin.model.JvmCompilationTask
@@ -35,7 +35,7 @@ internal class JavaCompiler @Inject constructor(
          */
         private val DIR_SEP = "${File.separatorChar}${File.pathSeparator}"
     }
-    fun compile(context: CompilationTaskContext, command: JvmCompilationTask) {
+    fun compile(context: CompilationTaskContext, command: JvmCompilationTask) : List<String> {
         val i = command.inputs
         val d = command.directories
         if (i.javaSourcesList.isNotEmpty()) {
@@ -57,5 +57,6 @@ internal class JavaCompiler @Inject constructor(
                 javacInvoker.compile(a, PrintWriter(pw))
             })
         }
+        return emptyList()
     }
 }
