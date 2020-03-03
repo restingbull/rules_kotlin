@@ -23,11 +23,11 @@ import io.bazel.kotlin.builder.tasks.BazelWorker;
 import io.bazel.kotlin.builder.tasks.KotlinBuilder;
 import io.bazel.kotlin.builder.tasks.js.Kotlin2JsTaskExecutor;
 import io.bazel.kotlin.builder.tasks.jvm.KotlinJvmTaskExecutor;
-import io.bazel.kotlin.builder.toolchain.KotlinToolchain;
+import io.bazel.kotlin.builder.tasks.jvm.KtAbiPluginArgs;
 import io.bazel.kotlin.builder.toolchain.KotlinCompilerPluginArgsEncoder;
-
-import javax.inject.Singleton;
+import io.bazel.kotlin.builder.toolchain.KotlinToolchain;
 import java.io.PrintStream;
+import javax.inject.Singleton;
 
 @Singleton
 @dagger.Component(modules = {KotlinBuilderComponent.Module.class})
@@ -64,6 +64,10 @@ public interface KotlinBuilderComponent {
     @Provides
     public BazelWorker provideWorker(KotlinBuilder builder) {
       return new BazelWorker(builder, System.err, "KotlinCompile");
+    }
+
+    @Provides public KtAbiPluginArgs provideAbiPlugin(KotlinToolchain toolchain) {
+      return new KtAbiPluginArgs(toolchain.getJvmAbiGen(), toolchain.getSkipCodeGen());
     }
   }
 }
