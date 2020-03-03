@@ -36,7 +36,8 @@ class KotlinJvmTaskExecutor @Inject internal constructor(
   private val pluginArgsEncoder: KotlinCompilerPluginArgsEncoder,
   private val javaCompiler: JavaCompiler,
   private val jDepsGenerator: JDepsGenerator,
-  private val abiPlugins: KtAbiPluginArgs
+  private val abiPlugins: KtAbiPluginArgs,
+  private val toolchain: KotlinToolchain
 ) {
 
   private fun combine(one: Throwable?, two: Throwable?): Throwable? {
@@ -60,6 +61,13 @@ class KotlinJvmTaskExecutor @Inject internal constructor(
         sequenceOf(
             runCatching {
               context.execute("kotlinc") {
+//                if ( inputs.classpathList.any { classpath -> "kotlin-android-extensions-runtime" in classpath } ) {
+//                      ?.let { compiler ->
+//                        args += "-Xplugin=$compiler"
+//                        args += "-P"
+//                        args += "plugin:org.jetbrains.kotlin.android:experimental=true"
+//                      }
+//                }
                 compileKotlin(context,
                     compiler,
                     args = baseArgs()
@@ -71,6 +79,14 @@ class KotlinJvmTaskExecutor @Inject internal constructor(
                           }
                           given(outputs.jar).empty {
                             plugin(abiPlugins.skipCodeGen)
+                          }
+                        }.given(
+                            inputs.classpathList.any {
+                              classpath -> "kotlin-android-extensions-runtime" in classpath
+                            }
+                        ) {
+                          plugin(toolchain.extensionsCompiler) {
+                            flag("experimentl", "true")
                           }
                         },
                     printOnFail = false

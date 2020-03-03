@@ -225,7 +225,7 @@ def kt_jvm_compile_action(ctx, rule_kind, output_jar):
     toolchains = _compiler_toolchains(ctx)
     dirs = _compiler_directories(ctx)
     srcs = _partitioned_srcs(ctx.files.srcs)
-    friend = _compiler_friends(ctx, friends = getattr(ctx.attr, "friends", []))
+    friend = _compiler_friends(ctx, friends = getattr(ctx.attr, "friends", [getattr(ctx.attr, "friend")]))
     compile_deps = _compiler_deps(toolchains, friend, deps = ctx.attr.deps)
     plugins = _plugin_mappers.targets_to_kt_plugins(ctx.attr.plugins + ctx.attr.deps)
 

@@ -163,6 +163,11 @@ _common_attr = utils.add_dicts(
             default = [],
             allow_files = False,
         ),
+        "friend": attr.label(
+            doc = """A single Kotlin dep which allows this code to access internal members of the given dependency.
+             Currently uses the output jar of the module -- i.e., exported deps won't be included.""",
+            providers = [JavaInfo, _KtJvmInfo],
+        ),
         "resources": attr.label_list(
             doc = """A list of files that should be include in a Java jar.""",
             default = [],
