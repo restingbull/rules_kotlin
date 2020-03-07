@@ -14,24 +14,24 @@
  *  limitations under the License.
  *
  */
+
 package io.bazel.kotlin.builder;
 
 import dagger.BindsInstance;
 import dagger.Component;
-import dagger.Provides;
 import io.bazel.kotlin.builder.tasks.BazelWorker;
 import io.bazel.kotlin.builder.tasks.KotlinBuilder;
 import io.bazel.kotlin.builder.tasks.js.Kotlin2JsTaskExecutor;
 import io.bazel.kotlin.builder.tasks.jvm.KotlinJvmTaskExecutor;
 import io.bazel.kotlin.builder.toolchain.KotlinToolchain;
-import io.bazel.kotlin.builder.toolchain.KotlinCompilerPluginArgsEncoder;
-
 import javax.inject.Singleton;
-import java.io.PrintStream;
 
 @Singleton
 @dagger.Component(modules = {KotlinBuilderComponent.Module.class})
-public interface KotlinBuilderComponent {
+public interface KotlinBuilderTestComponent {
+
+  KotlinBuilder kotlinBuilder();
+
   KotlinToolchain toolchain();
 
   KotlinJvmTaskExecutor jvmTaskExecutor();
@@ -41,29 +41,10 @@ public interface KotlinBuilderComponent {
   BazelWorker worker();
 
   @Component.Builder
-  public interface Builder {
+  interface Builder {
     @BindsInstance
-    KotlinBuilderComponent.Builder toolchain(KotlinToolchain toolchain);
+    Builder toolchain(KotlinToolchain toolchain);
 
-    KotlinBuilderComponent build();
-  }
-
-  @dagger.Module
-  public class Module {
-    @Provides
-    public KotlinCompilerPluginArgsEncoder providePluginArgEncoder(KotlinToolchain toolchain) {
-      return new KotlinCompilerPluginArgsEncoder(
-          toolchain.getKapt3Plugin().getJarPath(), toolchain.getKapt3Plugin().getId());
-    }
-
-    @Provides
-    public PrintStream provideDebugPrintStream() {
-      return System.err;
-    }
-
-    @Provides
-    public BazelWorker provideWorker(KotlinBuilder builder) {
-      return new BazelWorker(builder, System.err, "KotlinCompile");
-    }
+    KotlinBuilderTestComponent build();
   }
 }

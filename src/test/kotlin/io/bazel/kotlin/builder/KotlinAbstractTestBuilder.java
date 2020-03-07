@@ -25,6 +25,7 @@ import io.bazel.kotlin.model.RuleKind;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -146,7 +147,7 @@ abstract class KotlinAbstractTestBuilder<T> {
     ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
     try (PrintStream outputStream = new PrintStream(byteArrayOutputStream)) {
       return operation.apply(new CompilationTaskContext(info, outputStream,
-          instanceRoot().toAbsolutePath().toString()), task);
+          instanceRoot().toAbsolutePath().toString() + File.separator), task);
     } finally {
       outLines =
           Collections.unmodifiableList(
