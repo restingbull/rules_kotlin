@@ -124,9 +124,6 @@ _implicit_deps = {
         default = Label("@bazel_tools//tools/zip:zipper"),
         allow_files = True,
     ),
-    "_java_runtime": attr.label(
-        default = Label("@bazel_tools//tools/jdk:current_java_runtime"),
-    ),
     "_java_stub_template": attr.label(
         cfg = "host",
         default = Label("@kt_java_stub_template//file"),
@@ -136,6 +133,16 @@ _implicit_deps = {
         runtime for dexing""",
         default = Label("@" + _KT_COMPILER_REPO + "//:kotlin-stdlib"),
         cfg = "target",
+    ),
+    "_java_toolchain": attr.label(
+        default = Label("@bazel_tools//tools/jdk:current_java_toolchain"),
+    ),
+    "_host_javabase": attr.label(
+        default = Label("@bazel_tools//tools/jdk:current_java_runtime"),
+        cfg = "host",
+    ),
+    "_java_runtime": attr.label(
+        default = Label("@bazel_tools//tools/jdk:current_java_runtime"),
     ),
 }
 
@@ -243,6 +250,8 @@ kt_jvm_library = rule(
     attrs = _lib_common_attr,
     outputs = _common_outputs,
     toolchains = _common_toolchains,
+    fragments = ["java"],      # Required fragments of the target configuration
+    host_fragments = ["java"], # Required fragments of the host configuration
     implementation = _kt_jvm_library_impl,
     provides = [JavaInfo, _KtJvmInfo],
 )
@@ -264,6 +273,8 @@ kt_jvm_binary = rule(
     executable = True,
     outputs = _common_outputs,
     toolchains = _common_toolchains,
+    fragments = ["java"],      # Required fragments of the target configuration
+    host_fragments = ["java"], # Required fragments of the host configuration
     implementation = _kt_jvm_binary_impl,
 )
 

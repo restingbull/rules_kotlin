@@ -87,19 +87,16 @@ class BazelWorker(
             System.setErr(ps)
             val invocationWorker = InvocationWorker(delegate, buffer)
             while (true) {
-              val status =
-                  WorkerProtocol.WorkRequest.parseDelimitedFrom(realStdIn)?.let { request ->
-                    invocationWorker.invoke(loadArguments(request.argumentsList, true))
-                  }?.also { (status, log) ->
-                    with(WorkerProtocol.WorkResponse.newBuilder()) {
-                      exitCode = status
-                      output = log
-                      build().writeDelimitedTo(realStdOut)
-                    }
-                  }?.let { (status, _) -> status } ?: OK
-
-              if (status != OK) {
-                return status
+              if (WorkerProtocol.WorkRequest.parseDelimitedFrom(realStdIn)?.let { request ->
+                invocationWorker.invoke(loadArguments(request.argumentsList, true))
+              }?.also { (status, log) ->
+                with(WorkerProtocol.WorkResponse.newBuilder()) {
+                  exitCode = status
+                  output = log
+                  build().writeDelimitedTo(realStdOut)
+                }
+              } == null) {
+                break
               }
               System.gc()
             }

@@ -61,32 +61,25 @@ class KotlinJvmTaskExecutor @Inject internal constructor(
         sequenceOf(
             runCatching {
               context.execute("kotlinc") {
-//                if ( inputs.classpathList.any { classpath -> "kotlin-android-extensions-runtime" in classpath } ) {
-//                      ?.let { compiler ->
-//                        args += "-Xplugin=$compiler"
-//                        args += "-P"
-//                        args += "plugin:org.jetbrains.kotlin.android:experimental=true"
-//                      }
-//                }
                 compileKotlin(context,
                     compiler,
                     args = baseArgs()
                         .given(outputs.jar).notEmpty {
                           append(codeGenArgs())
-                        }.given(outputs.abijar).notEmpty {
-                          plugin(abiPlugins.jvmAbiGen) {
-                            flag("outputDir", directories.classes)
-                          }
-                          given(outputs.jar).empty {
-                            plugin(abiPlugins.skipCodeGen)
-                          }
                         }.given(
                             inputs.classpathList.any {
                               classpath -> "kotlin-android-extensions-runtime" in classpath
                             }
                         ) {
                           plugin(toolchain.extensionsCompiler) {
-                            flag("experimentl", "true")
+                            flag("experimental", "true")
+                          }
+                        }.given(outputs.abijar).notEmpty {
+                          plugin(abiPlugins.jvmAbiGen) {
+                            flag("outputDir", directories.classes)
+                          }
+                          given(outputs.jar).empty {
+                            plugin(abiPlugins.skipCodeGen)
                           }
                         },
                     printOnFail = false
@@ -95,7 +88,11 @@ class KotlinJvmTaskExecutor @Inject internal constructor(
             },
             runCatching {
               context.execute("javac") {
-                javaCompiler.compile(context, this)
+                if (outputs.jar.isNotEmpty()) {
+                  javaCompiler.compile(context, this)
+                } else {
+                  emptyList()
+                }
               }
             }
         ).map {

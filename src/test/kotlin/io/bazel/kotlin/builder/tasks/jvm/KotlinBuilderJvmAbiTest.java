@@ -35,7 +35,34 @@ public class KotlinBuilderJvmAbiTest {
       };
 
   @Test
-  public void testGeneratesAbiOnly() {
+  public void superClass() {
+    Deps.Dep d = ctx.runCompileTask(
+        c -> {
+          c.addSource("AClass.kt",
+              "package something;",
+              "abstract class AClass {}");
+          c.addSource(
+              "HasSomething.java",
+              "package something;",
+              "",
+              "interface HasSomething{}");
+          c.outputAbiJar();
+        });
+    ctx.runCompileTask(
+        c -> {
+          c.addDirectDependencies(d);
+          c.addSource("Dependent.kt",
+              "package dep;",
+              "import something.AClass",
+              "import something.HasSomething",
+              "class Dependent: AClass(), HasSomething {}");
+          c.outputJar().outputSrcJar().outputJdeps();
+        });
+  }
+
+
+  @Test
+  public void generatesAbiOnly() {
     Deps.Dep d = ctx.runCompileTask(
         c -> {
           c.addSource("AClass.kt", "package something;" + "class AClass{}");

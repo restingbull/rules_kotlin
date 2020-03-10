@@ -21,9 +21,7 @@ import com.google.common.collect.ImmutableList;
 import io.bazel.kotlin.builder.utils.BazelRunFiles;
 import java.util.List;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.Set;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.annotation.Nullable;
 
@@ -112,21 +110,12 @@ public final class Deps {
      * @return Dep reprenseting the resource
      * @throws IllegalArgumentException if the label does not exist.
      */
-    protected static Dep fromLabel(String label) {
-      // jvm properties do not allow slashes or :.
-      String key = label.replaceAll("/", ".").replaceAll(":", ".");
-      Properties properties = System.getProperties();
-      Preconditions.checkArgument(properties.containsKey(key),
-          String.format("Unable to find %s in properties:\n%s", key,
-              properties.keySet()
-                  .stream()
-                  .map(Object::toString)
-                  .collect(Collectors.joining("\n"))));
+    public static Dep fromLabel(String label) {
       return Dep.builder()
           .label(label)
           .compileJars(
               ImmutableList.of(
-                  BazelRunFiles.resolveVerified(properties.getProperty(key)).getPath()))
+                  BazelRunFiles.fromLabel(label).toString()))
           .build();
     }
   }

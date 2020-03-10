@@ -35,6 +35,9 @@ kt_rules_test(
 kt_rules_test(
     name = "KotlinWorkerTest",
     srcs = ["jvm/KotlinWorkerTest.kt"],
+    data = [
+        "@bazel_tools//tools/jdk:ijar"
+    ]
 )
 
 kt_rules_test(

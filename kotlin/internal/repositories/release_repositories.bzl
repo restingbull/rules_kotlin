@@ -28,9 +28,9 @@ BAZEL_JAVA_LAUNCHER_VERSION = "0.28.1"
 
 KOTLIN_CURRENT_COMPILER_RELEASE = {
     "urls": [
-        "https://github.com/JetBrains/kotlin/releases/download/v1.3.50/kotlin-compiler-1.3.50.zip",
+        "https://github.com/JetBrains/kotlin/releases/download/v1.3.70/kotlin-compiler-1.3.70.zip",
     ],
-    "sha256": "69424091a6b7f52d93eed8bba2ace921b02b113dbb71388d704f8180a6bdc6ec",
+    "sha256": "709d782ff707a633278bac4c63bab3026b768e717f8aaf62de1036c994bc89c7"
 }
 
 def kotlin_repositories(compiler_release = KOTLIN_CURRENT_COMPILER_RELEASE):

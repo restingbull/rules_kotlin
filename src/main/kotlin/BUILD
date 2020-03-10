@@ -58,11 +58,14 @@ java_binary(
 release_archive(
     name = "pkg",
     srcs = [
-        "//src/main/kotlin/io/bazel/kotlin/compiler:compiler",
+        ":skip-code-gen.jar",
     ],
     package_dir = "src/main/kotlin",  # explicitly set the package directory, as there are no parent release_archives.
     src_map = {
         ":builder_deploy.jar": "kotlin_worker.jar",
         "BUILD.release.bazel": "BUILD.bazel",
     },
+    deps = [
+        "//src/main/kotlin/io/bazel/kotlin/compiler:pkg",
+    ]
 )

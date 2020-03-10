@@ -25,3 +25,17 @@ kt_bootstrap_library(
         "@com_github_jetbrains_kotlin//:kotlin-script-runtime",
     ],
 )
+
+
+load("//kotlin/internal/utils:packager.bzl", "release_archive")
+
+release_archive(
+    name = "pkg",
+    srcs = [
+        ":compiler",
+    ],
+    package_dir = "src/main/kotlin/io/bazel/kotlin/compiler",  # explicitly set the package directory, as there are no parent release_archives.
+    src_map = {
+         "BUILD.release.bazel": "BUILD.bazel",
+    },
+)

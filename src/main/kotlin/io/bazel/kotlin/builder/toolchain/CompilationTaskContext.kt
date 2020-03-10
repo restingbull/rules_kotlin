@@ -85,7 +85,9 @@ class CompilationTaskContext(
    * Print a proto message if debugging is enabled for the task.
    */
   fun printProto(header: String, msg: MessageOrBuilder) {
-    printLines(header, TextFormat.printToString(msg).split("\n"), filterEmpty = true)
+    printLines(header,
+        TextFormat.printToString(msg).split("\n"),
+        filterEmpty = true)
   }
 
   /**
@@ -127,7 +129,7 @@ class CompilationTaskContext(
         if (printOnFail) {
           printCompilerOutput(output)
         }
-        throw CompilationStatusException("compile phase failed", result, output)
+        throw CompilationStatusException("compile phase failed", result, output + listOf("Args:\n" + args.joinToString(" ")))
       } else if (printOnSuccess) {
         printCompilerOutput(output)
       }
