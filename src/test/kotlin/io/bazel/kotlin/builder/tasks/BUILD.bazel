@@ -25,12 +25,7 @@ kt_rules_test(
 )
 
 kt_rules_test(
-    name = "KotlinWorkerTest",
-    srcs = ["jvm/KotlinWorkerTest.kt"],
-)
-
-kt_rules_test(
-    name = "KotlinBuilderJavabiTest",
+    name = "KotlinBuilderJvmJavaTest",
     srcs = ["jvm/KotlinBuilderJvmJavaTest.java"],
 )
 
