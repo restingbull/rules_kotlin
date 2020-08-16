@@ -15,17 +15,13 @@
 """
 
 load("//kotlin/internal/repositories:setup.bzl", "kt_configure")
-load(
-    "//kotlin/internal/repositories:release_repositories.bzl",
-    "KOTLIN_CURRENT_COMPILER_RELEASE",
-    _release_kotlin_repositories = "kotlin_repositories",
-)
+load("@io_bazel_rules_kotlin//kotlin:kotlin.bzl", _release_kotlin_repositories = "kotlin_repositories")
 
-def kotlin_repositories(compiler_release = KOTLIN_CURRENT_COMPILER_RELEASE):
+def kotlin_repositories():
     """Call this in the WORKSPACE file to setup the Kotlin rules.
 
     Args:
         compiler_release: (internal) dict containing "urls" and "sha256" for the Kotlin compiler.
     """
     kt_configure()
-    _release_kotlin_repositories(compiler_release)
+    _release_kotlin_repositories()

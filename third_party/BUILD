@@ -14,7 +14,7 @@
 package(default_visibility = ["//visibility:public"])
 
 load("@rules_java//java:defs.bzl", "java_binary", "java_library", "java_plugin")
-load("//kotlin:kotlin.bzl", "kt_jvm_import")
+load("@io_bazel_rules_kotlin//kotlin:kotlin.bzl", "kt_jvm_import")
 load("//kotlin/internal/utils:packager.bzl", "release_archive")
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 
@@ -68,7 +68,6 @@ java_import(
     neverlink = 1,
     visibility = ["//visibility:public"],
 )
-
 
 bzl_library(
     name = "java_tools_bzl",

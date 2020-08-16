@@ -13,10 +13,10 @@
 # limitations under the License.
 
 load(
-    "//kotlin/internal:defs.bzl",
-    _KT_COMPILER_REPO = "KT_COMPILER_REPO",
-    _KtJsInfo = "KtJsInfo",
-    _TOOLCHAIN_TYPE = "TOOLCHAIN_TYPE",
+    "@io_bazel_rules_kotlin//kotlin/internal:defs.bzl",
+    "KT_COMPILER_REPO",
+    "KtJsInfo",
+    "TOOLCHAIN_TYPE",
 )
 
 """Kotlin Toolchains
@@ -80,7 +80,7 @@ _kt_toolchain = rule(
     attrs = {
         "kotlin_home": attr.label(
             doc = "the filegroup defining the kotlin home",
-            default = Label("@" + _KT_COMPILER_REPO + "//:home"),
+            default = Label("@" + KT_COMPILER_REPO + "//:home"),
             allow_files = True,
         ),
         "kotlinbuilder": attr.label(
@@ -118,7 +118,7 @@ _kt_toolchain = rule(
         "jvm_runtime": attr.label_list(
             doc = "The implicit jvm runtime libraries. This is internal.",
             default = [
-                Label("@" + _KT_COMPILER_REPO + "//:kotlin-stdlib"),
+                Label("@" + KT_COMPILER_REPO + "//:kotlin-stdlib"),
             ],
             providers = [JavaInfo],
             cfg = "target",
@@ -126,12 +126,12 @@ _kt_toolchain = rule(
         "jvm_stdlibs": attr.label_list(
             doc = "The jvm stdlibs. This is internal.",
             default = [
-                Label("@" + _KT_COMPILER_REPO + "//:annotations"),
-                Label("@" + _KT_COMPILER_REPO + "//:kotlin-stdlib"),
-                Label("@" + _KT_COMPILER_REPO + "//:kotlin-stdlib-jdk7"),
+                Label("@" + KT_COMPILER_REPO + "//:annotations"),
+                Label("@" + KT_COMPILER_REPO + "//:kotlin-stdlib"),
+                Label("@" + KT_COMPILER_REPO + "//:kotlin-stdlib-jdk7"),
                 # JDK8 is being added blindly but I think we will probably not support bytecode levels 1.6 when the
                 # repo stabelizes so this should be fine.
-                Label("@" + _KT_COMPILER_REPO + "//:kotlin-stdlib-jdk8"),
+                Label("@" + KT_COMPILER_REPO + "//:kotlin-stdlib-jdk8"),
             ],
             providers = [JavaInfo],
             cfg = "target",
@@ -154,14 +154,14 @@ _kt_toolchain = rule(
         ),
         "js_stdlibs": attr.label_list(
             default = [
-                Label("@" + _KT_COMPILER_REPO + "//:kotlin-stdlib-js"),
+                Label("@" + KT_COMPILER_REPO + "//:kotlin-stdlib-js"),
             ],
-            providers = [_KtJsInfo],
+            providers = [KtJsInfo],
         ),
-        "experimental_use_abi_jars" : attr.bool(
-            doc="Compile using abi jars",
+        "experimental_use_abi_jars": attr.bool(
+            doc = "Compile using abi jars",
             default = False,
-        )
+        ),
     },
     implementation = _kotlin_toolchain_impl,
     provides = [platform_common.ToolchainInfo],
@@ -176,7 +176,8 @@ def define_kt_toolchain(
         language_version = None,
         api_version = None,
         jvm_target = None,
-        experimental_use_abi_jars = False):
+        experimental_use_abi_jars = False,
+        kt_repository = "@io_bazel_rules_kotlin"):
     """Define the Kotlin toolchain."""
     impl_name = name + "_impl"
     _kt_toolchain(
@@ -186,28 +187,28 @@ def define_kt_toolchain(
         jvm_target = jvm_target,
         debug =
             select({
-                "@io_bazel_rules_kotlin//kotlin/internal:builder_debug_trace": ["trace"],
+                kt_repository + "//kotlin/internal:builder_debug_trace": ["trace"],
                 "//conditions:default": [],
             }) +
             select({
-                "@io_bazel_rules_kotlin//kotlin/internal:builder_debug_timings": ["timings"],
+                kt_repository + "//kotlin/internal:builder_debug_timings": ["timings"],
                 "//conditions:default": [],
             }),
         experimental_use_abi_jars = select({
-            "@io_bazel_rules_kotlin//kotlin/internal:experimental_use_abi_jars": True,
-            "@io_bazel_rules_kotlin//kotlin/internal:noexperimental_use_abi_jars": False,
+            kt_repository + "//kotlin/internal:experimental_use_abi_jars": True,
+            kt_repository + "//kotlin/internal:noexperimental_use_abi_jars": False,
             "//conditions:default": experimental_use_abi_jars,
         }),
         visibility = ["//visibility:public"],
     )
     native.toolchain(
         name = name,
-        toolchain_type = _TOOLCHAIN_TYPE,
+        toolchain_type = TOOLCHAIN_TYPE,
         toolchain = impl_name,
         visibility = ["//visibility:public"],
     )
 
-def kt_configure_toolchains():
+def kt_configure_toolchains(kt_repository = "@io_bazel_rules_kotlin"):
     """
     Defines the toolchain_type and default toolchain for kotlin compilation.
     """
@@ -232,10 +233,11 @@ def kt_configure_toolchains():
     )
 
     native.toolchain_type(
-        name = "kt_toolchain_type",
+        name = "ktTOOLCHAIN_TYPE",
         visibility = ["//visibility:public"],
     )
 
     define_kt_toolchain(
         name = "default_toolchain",
+        kt_repository = kt_repository,
     )

@@ -14,7 +14,7 @@
 package(default_visibility = ["//visibility:private"])
 
 load("@rules_java//java:defs.bzl", "java_library", "java_plugin")
-load("//kotlin:kotlin.bzl", "kt_jvm_library")
+load("@io_bazel_rules_kotlin//kotlin:kotlin.bzl", "kt_jvm_library")
 
 java_plugin(
     name = "autovalue",

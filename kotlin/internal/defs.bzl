@@ -10,39 +10,20 @@
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
-# limitations under the License.#
-
-# The Kotlin Toolchain type.
-TOOLCHAIN_TYPE = "@io_bazel_rules_kotlin//kotlin/internal:kt_toolchain_type"
-
-# Java toolchains
-JAVA_TOOLCHAIN_TYPE = "@bazel_tools//tools/jdk:toolchain_type"
-JAVA_RUNTIME_TOOLCHAIN_TYPE = "@bazel_tools//tools/jdk:runtime_toolchain_type"
-
-# The name of the Kotlin compiler workspace.
-KT_COMPILER_REPO = "com_github_jetbrains_kotlin"
-
-KtJvmInfo = provider(
-    fields = {
-        "module_name": "the module name",
-        "srcs": "the source files. [intelij-aspect]",
-        "outputs": "output jars produced by this rule. [intelij-aspect]",
-        "language_version": "version of kotlin used. [intellij-aspect]",
-    },
+# limitations under the License.
+load("//kotlin/internal/repositories:vars.bzl", "VARS")
+load(
+    "@io_bazel_rules_kotlin//kotlin/internal:defs.bzl",
+    ktcpi = "KtCompilerPluginInfo",
+    ktjmi = "KtJvmInfo",
+    ktjsi = "KtJsInfo",
+    tt = "TOOLCHAIN_TYPE",
 )
 
-KtJsInfo = provider(
-    fields = {
-        "js": "The primary output of the library",
-        "js_map": "The map file for the library",
-        "jar": "A jar of the library.",
-        "srcjar": "The jar containing the sources of the library",
-    },
-)
-
-KtCompilerPluginInfo = provider(
-    fields = {
-        "classpath": "The kotlin compiler plugin classpath",
-        "options": "List of plugin options, represented as structs with an id and a value field, to be passed to the compiler",
-    },
-)
+KT_COMPILER_REPO = VARS.KT_COMPILER_REPO
+TOOLCHAIN_TYPE = tt
+JAVA_TOOLCHAIN_TYPE = VARS.JAVA_TOOLCHAIN_TYPE
+KtJsInfo = ktjsi
+KtJvmInfo = ktjmi
+KtCompilerPluginInfo = ktcpi
+JAVA_RUNTIME_TOOLCHAIN_TYPE = VARS.JAVA_RUNTIME_TOOLCHAIN_TYPE

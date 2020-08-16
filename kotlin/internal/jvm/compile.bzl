@@ -32,11 +32,10 @@ load(
     "//kotlin/internal/utils:utils.bzl",
     _utils = "utils",
 )
-
 load(
     "@bazel_tools//tools/jdk:toolchain_utils.bzl",
     "find_java_runtime_toolchain",
-    "find_java_toolchain"
+    "find_java_toolchain",
 )
 
 # INTERNAL ACTIONS #####################################################################################################
@@ -268,7 +267,7 @@ def kt_jvm_compile_action(ctx, rule_kind, output_jar):
                 ctx,
                 source_files = srcs.java,
                 output = java_compile_jar,
-                deps = compile_deps.deps + [JavaInfo(compile_jar=kt_compile_jar, output_jar=kt_compile_jar)],
+                deps = compile_deps.deps + [JavaInfo(compile_jar = kt_compile_jar, output_jar = kt_compile_jar)],
                 java_toolchain = toolchains.java,
                 host_javabase = toolchains.java_runtime,
             )
@@ -378,7 +377,7 @@ def _run_kt_builder_action(ctx, rule_kind, toolchains, dirs, srcs, friend, compi
         len(srcs.kt),
         len(srcs.java),
         len(srcs.src_jars),
-        ctx.var.get("TARGET_CPU", "UNKNOWN CPU")
+        ctx.var.get("TARGET_CPU", "UNKNOWN CPU"),
     )
 
     tools, input_manifests = ctx.resolve_tools(

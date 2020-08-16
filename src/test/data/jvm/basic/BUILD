@@ -14,7 +14,7 @@
 package(default_visibility = ["//visibility:private"])
 
 load("@rules_java//java:defs.bzl", "java_binary", "java_library")
-load("//kotlin:kotlin.bzl", "kt_jvm_binary", "kt_jvm_library", "kt_jvm_test")
+load("@io_bazel_rules_kotlin//kotlin:kotlin.bzl", "kt_jvm_binary", "kt_jvm_library", "kt_jvm_test")
 
 kt_jvm_binary(
     name = "test_module_name_bin",

@@ -10,26 +10,24 @@
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
+load("//kotlin/internal:defs.bzl", "KT_COMPILER_REPO")
+load("@io_bazel_rules_kotlin//kotlin:kotlin.bzl", "kt_jvm_library")
 
-load("//src/main/kotlin:bootstrap.bzl", "kt_bootstrap_library")
-
-kt_bootstrap_library(
+kt_jvm_library(
     name = "toolchain",
     srcs = glob([
         "*.kt",
     ]),
     visibility = ["//src:__subpackages__"],
     deps = [
+        "//src/main/kotlin/io/bazel/kotlin/builder/utils",
+        "//src/main/kotlin/io/bazel/kotlin/plugin:skip-code-gen-lib",
         "//src/main/protobuf:kotlin_model_java_proto",
-        "@com_github_jetbrains_kotlin//:kotlin-preloader",
+        "@" + KT_COMPILER_REPO + "//:jvm-abi-gen",
+        "@" + KT_COMPILER_REPO + "//:kotlin-compiler",
+        "@" + KT_COMPILER_REPO + "//:kotlin-preloader",
         "@kotlin_rules_maven//:com_google_protobuf_protobuf_java",
         "@kotlin_rules_maven//:com_google_protobuf_protobuf_java_util",
         "@kotlin_rules_maven//:javax_inject_javax_inject",
-        "//src/main/kotlin/io/bazel/kotlin/builder/utils:utils",
-        "//src/main/kotlin/io/bazel/kotlin/plugin:skip-code-gen-lib",
-    ],
-    neverlink_deps = [
-         "@com_github_jetbrains_kotlin//:jvm-abi-gen",
-         "@com_github_jetbrains_kotlin//:kotlin-compiler",
     ],
 )

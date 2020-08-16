@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//src/main/kotlin:bootstrap.bzl", "kt_bootstrap_library")
+load("@io_bazel_rules_kotlin//kotlin:kotlin.bzl", "kt_jvm_library")
 
-kt_bootstrap_library(
+kt_jvm_library(
     name = "tasks",
     srcs = glob([
         "**/*.kt",

@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 load("@rules_java//java:defs.bzl", "java_test")
-load("//kotlin:kotlin.bzl", "kt_jvm_test")
+load("@io_bazel_rules_kotlin//kotlin:kotlin.bzl", "kt_jvm_test")
+load("//kotlin/internal:defs.bzl", "KT_COMPILER_REPO")
 
 def _get_class_name(kwargs):
     if len(kwargs.get("srcs", [])) == 1:
@@ -32,11 +33,11 @@ def kt_rules_test(name, **kwargs):
     for dep in [
         "//src/main/kotlin/io/bazel/kotlin/compiler",
         "//src/main/kotlin:skip-code-gen",
-        "@com_github_jetbrains_kotlin//:annotations",
-        "@com_github_jetbrains_kotlin//:jvm-abi-gen",
-        "@com_github_jetbrains_kotlin//:kotlin-stdlib",
-        "@com_github_jetbrains_kotlin//:kotlin-stdlib-jdk7",
-        "@com_github_jetbrains_kotlin//:kotlin-stdlib-jdk8",
+        "@" + KT_COMPILER_REPO + "//:annotations",
+        "@" + KT_COMPILER_REPO + "//:jvm-abi-gen",
+        "@" + KT_COMPILER_REPO + "//:kotlin-stdlib",
+        "@" + KT_COMPILER_REPO + "//:kotlin-stdlib-jdk7",
+        "@" + KT_COMPILER_REPO + "//:kotlin-stdlib-jdk8",
     ] + args["data"]:
         if dep not in args["data"]:
             args["data"] += [dep]

@@ -37,9 +37,6 @@ stardoc(
     out = "kotlin.md",
     input = "rules.bzl",
     rule_template = "//kotlin:doc-templates/rule.vm",
-    deps = [
-        "kotlin",
-    ],
     symbol_names = [
         "define_kt_toolchain",
         "kt_js_library",
@@ -51,5 +48,11 @@ stardoc(
         "kt_jvm_test",
         "kt_android_library",
         "kt_compiler_plugin",
-    ]
+    ],
+    deps = [
+        "kotlin",
+    ],
+    tags = [
+        "manual",
+    ],
 )

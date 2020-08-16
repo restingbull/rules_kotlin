@@ -17,13 +17,17 @@ load("//kotlin/internal/utils:packager.bzl", "release_archive")
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 
 # Configures the toolchains
-kt_configure_toolchains()
+kt_configure_toolchains(kt_repository = "")
 
 release_archive(
     name = "pkg",
-    srcs = glob(["*.bzl"]),
+    srcs = glob(
+        ["*.bzl"],
+        exclude = ["defs.bzl"],
+    ),
     src_map = {
         "BUILD.release.bazel": "BUILD.bazel",
+        "defs.release.bzl": "defs.bzl",
     },
     deps = [
         "//kotlin/internal/js:pkg",
@@ -35,11 +39,12 @@ release_archive(
 
 bzl_library(
     name = "internal",
-    srcs = glob(["*.bzl"]),
+    srcs = glob(["*.bzl"], exclude=["defs.bzl"]),
     visibility = ["//kotlin:__subpackages__"],
     deps = [
         "//kotlin/internal/js",
         "//kotlin/internal/jvm",
         "//kotlin/internal/utils",
+        "//kotlin/internal/repositories",
     ],
 )

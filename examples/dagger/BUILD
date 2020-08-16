@@ -15,7 +15,7 @@ load("@rules_java//java:defs.bzl", "java_binary", "java_library", "java_plugin")
 
 package(default_visibility = ["//visibility:private"])
 
-load("//kotlin:kotlin.bzl", "kt_jvm_library")
+load("@io_bazel_rules_kotlin//kotlin:kotlin.bzl", "kt_jvm_library")
 
 # Generate a srcjar to validate intellij plugin correctly attaches it.
 genrule(
