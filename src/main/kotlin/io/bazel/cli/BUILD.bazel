@@ -1,0 +1,13 @@
+# Program structure management.
+load("@io_bazel_rules_kotlin//kotlin:kotlin.bzl", "kt_jvm_library")
+
+kt_jvm_library(
+    name = "cli",
+    srcs = glob(["*.kt"]),
+    deps = [
+        "//third_party:kotlinx_cli"
+    ],
+    visibility = [
+        "//:__subpackages__"
+    ]
+)
