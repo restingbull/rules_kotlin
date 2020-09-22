@@ -15,8 +15,11 @@
  *
  */
 
-package io.bazel.cli
+package io.bazel.worker
 
-interface Command {
+import io.bazel.worker.WorkerContext.TaskContext
 
+/** Task for Worker execution. */
+interface Work {
+  operator fun invoke(ctx: TaskContext, args: Array<String>): Status
 }

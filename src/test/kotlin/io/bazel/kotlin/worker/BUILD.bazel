@@ -1,0 +1,83 @@
+load("@io_bazel_rules_kotlin//kotlin:kotlin.bzl", "kt_jvm_test", "kt_jvm_library")
+
+kt_jvm_test(
+    name = "IOTest",
+    srcs = [
+        "IOTest.kt",
+    ],
+    test_class = "io.bazel.kotlin.worker.IOTest",
+    deps = [
+        "//src/main/kotlin/io/bazel/worker",
+        "@com_github_jetbrains_kotlin//:kotlin-test",
+        "@kotlin_rules_maven//:com_google_truth_truth",
+    ],
+)
+
+kt_jvm_test(
+    name = "WorkerContextTest",
+    srcs = [
+        "WorkerContextTest.kt",
+    ],
+    test_class = "io.bazel.kotlin.worker.WorkerContextTest",
+    deps = [
+        "//src/main/kotlin/io/bazel/worker",
+        "@kotlin_rules_maven//:org_jetbrains_kotlin_kotlin_test",
+        "@kotlin_rules_maven//:com_google_truth_truth",
+    ],
+)
+
+kt_jvm_test(
+    name = "InvocationWorkerTest",
+    srcs = [
+        "InvocationWorkerTest.kt",
+    ],
+    test_class = "io.bazel.kotlin.worker.InvocationWorkerTest",
+    deps = [
+        "//src/main/kotlin/io/bazel/worker",
+        "@kotlin_rules_maven//:org_jetbrains_kotlin_kotlin_test",
+        "@kotlin_rules_maven//:com_google_truth_truth",
+    ],
+)
+
+
+kt_jvm_library(
+    name = "WorkerEnvironment",
+    srcs = ["WorkerEnvironment.kt"],
+    deps = [
+        "//src/main/protobuf:worker_protocol_java_proto",
+            "@kotlin_rules_maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core",
+            ]
+)
+
+kt_jvm_test(
+    name = "WorkerEnvironmentTest",
+    srcs = [
+        "WorkerEnvironmentTest.kt",
+    ],
+    test_class = "io.bazel.kotlin.worker.WorkerEnvironmentTest",
+    deps = [
+        ":WorkerEnvironment",
+        "//src/main/kotlin/io/bazel/worker",
+        "//src/main/protobuf:worker_protocol_java_proto",
+        "@kotlin_rules_maven//:org_jetbrains_kotlin_kotlin_test",
+        "@kotlin_rules_maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
+        "@kotlin_rules_maven//:com_google_truth_truth",
+    ],
+)
+
+
+kt_jvm_test(
+    name = "PersistentWorkerTest",
+    srcs = [
+        "PersistentWorkerTest.kt",
+    ],
+    test_class = "io.bazel.kotlin.worker.PersistentWorkerTest",
+    deps = [
+                ":WorkerEnvironment",
+        "//src/main/kotlin/io/bazel/worker",
+        "//src/main/protobuf:worker_protocol_java_proto",
+        "@kotlin_rules_maven//:org_jetbrains_kotlin_kotlin_test",
+        "@kotlin_rules_maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
+        "@kotlin_rules_maven//:com_google_truth_truth",
+    ],
+)

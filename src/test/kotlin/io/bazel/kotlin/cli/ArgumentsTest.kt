@@ -20,8 +20,15 @@ package io.bazel.kotlin.cli
 import com.google.common.truth.Truth.assertThat
 import io.bazel.cli.Arguments
 import org.junit.Test
+import java.nio.file.Files
+import java.nio.file.StandardOpenOption
 
 class ArgumentsTest {
+
+  private val tmp by lazy {
+    Files.createTempDirectory(javaClass.canonicalName)
+  }
+
   @Test
   fun flags() {
     class Forest(a: Arguments) {
@@ -32,7 +39,6 @@ class ArgumentsTest {
       }
 
       val bops by a.flag("bop", "head bop count", 0) { last ->
-        println("bop parse $this")
         RuntimeException().printStackTrace()
         toInt().plus(last)
       }
@@ -49,13 +55,16 @@ class ArgumentsTest {
       "--bop", "1",
       "--bop", "1",
       "--bop", "1"
-    ).parseInto(::Forest).onErrorRun {
-      assertThat(errs).isEmpty()
-    }!!.apply {
-      assertThat(little).isEqualTo("bunny")
-      assertThat(surname).containsExactly("foo", "foo", "foo", "foo")
-      assertThat(bops).isEqualTo(4)
-      assertThat(fairy).isNull()
+    ).parseInto(::Forest).then { status ->
+      status.ifError {
+        assertThat(errs).isEmpty()
+      }
+      apply {
+        assertThat(little).isEqualTo("bunny")
+        assertThat(surname).containsExactly("foo", "foo", "foo", "foo")
+        assertThat(bops).isEqualTo(4)
+        assertThat(fairy).isNull()
+      }
     }
   }
 
@@ -77,11 +86,14 @@ class ArgumentsTest {
       )
     }
 
-    Arguments("--loco", "hop", "hop", "--mammal", "bunny").parseInto(::Forest).onErrorRun {
-      assertThat(errs).isEmpty()
-    }!!.run {
-      assertThat(locomotion).isEqualTo("hop,hop")
-      assertThat(mammal).isEqualTo("bunny")
+    Arguments("--loco", "hop", "hop", "--mammal", "bunny").parseInto(::Forest).then { status ->
+      status.ifError {
+        assertThat(errs).isEmpty()
+      }
+      apply {
+        assertThat(locomotion).isEqualTo("hop,hop")
+        assertThat(mammal).isEqualTo("bunny")
+      }
     }
   }
 
@@ -93,17 +105,16 @@ class ArgumentsTest {
       }
     }
 
-    assertThat(Arguments()
-                 .parseInto(::Forest)
-                 .onErrorRun {
-                   assertThat(errs).containsExactly("--fairy is required")
-                   assertThat(help()).isEqualTo("""
+    assertThat(Arguments().parseInto(::Forest).then { status ->
+      status.ifError {
+        assertThat(errs).containsExactly("--fairy is required")
+        assertThat(help()).isEqualTo("""
                       Flags:
                         --fairy: mice loving (required)
                       """.trimIndent()
-                   )
-                 })
-      .isNull()
+        )
+      }
+    }).isNull()
   }
 
   @Test
@@ -123,13 +134,38 @@ class ArgumentsTest {
       "--little", "bunny",
       "bopping",
       "--mouse", "head"
-    ).parseInto(::Forest).onErrorRun {
-      assertThat(errs).isEmpty()
-    }?.apply {
+    ).parseInto(::Forest).then { status ->
+      status.ifError {
+        assertThat(errs).isEmpty()
+      }
       assertThat(little).isEqualTo("bunny")
       assertThat(action).isNotNull()
       action?.apply {
         assertThat(mouseTarget).isEqualTo("head")
+      }
+    }
+  }
+
+  @Test
+  fun expand() {
+    class Forest(a: Arguments) {
+      val fairy by a.flag("fairy", "peacekeeper", "anarchy")
+
+      val bopper by a.flag("bopper", "miscreant", "big")
+    }
+
+    val params = Files.write(tmp.resolve("forest.params"),
+                             listOf("--bopper", "foo foo"),
+                             StandardOpenOption.CREATE_NEW)
+    Arguments(
+      "--fairy", "authoritarian", "@$params"
+    ).parseInto(::Forest).then { status ->
+      status.ifError {
+        assertThat(errs).isEmpty()
+      }
+      apply {
+        assertThat(fairy).isEqualTo("authoritarian")
+        assertThat(bopper).isEqualTo("foo foo")
       }
     }
   }

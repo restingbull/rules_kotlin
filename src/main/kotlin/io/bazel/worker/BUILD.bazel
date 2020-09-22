@@ -1,0 +1,15 @@
+# General purpose Bazel worker implemented Kotlin. Best suited for jvm based tools.
+load("@io_bazel_rules_kotlin//kotlin:kotlin.bzl", "kt_jvm_library")
+
+kt_jvm_library(
+    name = "worker",
+    srcs = glob(["*.kt"]),
+    visibility = [
+        "//:__subpackages__",
+    ],
+    deps = [
+        "//src/main/kotlin/io/bazel/cli",
+        "//src/main/protobuf:worker_protocol_java_proto",
+        "@kotlin_rules_maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core",
+    ],
+)

@@ -37,9 +37,9 @@ public final class KotlinJvmTestBuilder extends KotlinAbstractTestBuilder<JvmCom
     @SuppressWarnings({"unused", "WeakerAccess"})
     public static Dep
             KOTLIN_ANNOTATIONS = Dep.fromLabel("@com_github_jetbrains_kotlin//:annotations"),
-            KOTLIN_STDLIB = Dep.fromLabel("@com_github_jetbrains_kotlin//:kotlin-stdlib"),
-            KOTLIN_STDLIB_JDK7 = Dep.fromLabel("@com_github_jetbrains_kotlin//:kotlin-stdlib-jdk7"),
-            KOTLIN_STDLIB_JDK8 = Dep.fromLabel("@com_github_jetbrains_kotlin//:kotlin-stdlib-jdk8"),
+            KOTLIN_STDLIB = Dep.fromLabel("@kotlin_rules_maven//:org_jetbrains_kotlin_kotlin_stdlib"),
+            KOTLIN_STDLIB_JDK7 = Dep.fromLabel("@kotlin_rules_maven//:org_jetbrains_kotlin_kotlin_stdlib-jdk7"),
+            KOTLIN_STDLIB_JDK8 = Dep.fromLabel("@kotlin_rules_maven//:org_jetbrains_kotlin_kotlin_stdlib-jdk8"),
             JVM_ABI_GEN = Dep.fromLabel("@com_github_jetbrains_kotlin//:jvm-abi-gen");
 
     private static final JvmCompilationTask.Builder taskBuilder = JvmCompilationTask.newBuilder();
