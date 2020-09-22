@@ -47,7 +47,7 @@ java_library(
     ],
     runtime_deps = [
         "@com_github_jetbrains_kotlin//:kotlin-reflect",
-        "@com_github_jetbrains_kotlin//:kotlin-stdlib",
+        "@kotlin_rules_maven//:org_jetbrains_kotlin_kotlin_stdlib",
     ],
     deps = _COMMON_DEPS + [
         "//third_party:autovalue",

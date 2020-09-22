@@ -1,6 +1,6 @@
 load(
     ":vars.release.bzl",
-    RELEASE="VARS",
+    RELEASE = "VARS",
 )
 
 _ignore = {k: True for k in dir(struct())}
@@ -17,7 +17,7 @@ config = dict(
     PROTOBUF_VERSION = "3.11.3",
     RULES_JVM_EXTERNAL_SHA = "f04b1466a00a2845106801e0c5cec96841f49ea4e7d1df88dc8e4bf31523df74",
     RULES_JVM_EXTERNAL_TAG = "2.7",
-    RULES_KOTLIN_SHA = None,
+    RULES_KOTLIN_SHA = "da0e6e1543fcc79e93d4d93c3333378f3bd5d29e82c1bc2518de0dbe048e6598",
     RULES_KOTLIN_VERSION = "1.4.0-rc3",
     RULES_NODEJS_SHA = "3356c6b767403392bab018ce91625f6d15ff8f11c6d772dc84bc9cada01c669a",
     RULES_NODEJS_VERSION = "0.36.1",
@@ -26,6 +26,13 @@ config = dict(
     SKYLIB_SHA = "2ea8a5ed2b448baf4a6855d3ce049c4c452a6470b1efd1504fdb7c1c134d220a",
     SKYLIB_VERSION = "0.8.0",
     TOOLCHAIN_TYPE = "@io_bazel_rules_kotlin//kotlin/internal:kt_toolchain_type",
+    KOTLIN = struct(
+        VERSION = "1.3.50",
+        COROUTINE = "1.3.5",
+        SERIALIZATION = "0.14.0",
+        TEST = "1.3.72",
+        REFLECT = "1.3.72",
+    ),
 )
 
 config.update({k: getattr(RELEASE, k, None) for k in dir(RELEASE) if not k in _ignore})
