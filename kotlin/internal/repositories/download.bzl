@@ -20,8 +20,8 @@ RULES_NODEJS_SHA = "84abf7ac4234a70924628baa9a73a5a5cbad944c4358cf9abdb4aab29c9a
 BAZEL_TOOLCHAINS_VERSION = "3.7.0"
 BAZEL_TOOLCHAINS_SHA = "8e0633dfb59f704594f19ae996a35650747adc621ada5e8b9fb588f808c89cb0"
 
-SKYLIB_VERSION = "0.8.0"
-SKYLIB_SHA = "2ea8a5ed2b448baf4a6855d3ce049c4c452a6470b1efd1504fdb7c1c134d220a"
+SKYLIB_VERSION = "1.0.3"
+SKYLIB_SHA = "1c531376ac7e5a180e0237938a2536de0c54d93f5c278634818e0efc952dd56c"
 
 PROTOBUF_VERSION = "3.11.3"
 PROTOBUF_SHA = "cf754718b0aa945b00550ed7962ddc167167bd922b842199eeb6505e6f344852"
@@ -73,7 +73,6 @@ def kt_download_local_dev_dependencies():
         http_archive,
         name = "bazel_skylib",
         urls = ["https://github.com/bazelbuild/bazel-skylib/archive/%s.tar.gz" % SKYLIB_VERSION],
-        strip_prefix = "bazel-skylib-%s" % SKYLIB_VERSION,
         sha256 = SKYLIB_SHA,
     )
 
