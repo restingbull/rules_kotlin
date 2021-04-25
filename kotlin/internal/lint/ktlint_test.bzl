@@ -1,4 +1,5 @@
-load(":editorconfig.bzl", "get_editorconfig")
+load(":ktlint.bzl", "ktlint")
+load("//kotlin/internal/utils:utils.bzl", "utils")
 load(":ktlint_config.bzl", "KtlintConfigInfo")
 
 def _ktlint(ctx, srcs, editorconfig):
@@ -27,7 +28,9 @@ def _ktlint(ctx, srcs, editorconfig):
     )
 
 def _ktlint_test_impl(ctx):
-    editorconfig = get_editorconfig(ctx.attr.config)
+    editorconfig = ktlint.editorconfig_from(ctx.attr.config)
+
+    ktlint_info = ktlint.toolchain_from(ctx.toolchains).tool_info
 
     script = _ktlint(
         ctx,
@@ -40,7 +43,7 @@ def _ktlint_test_impl(ctx):
         content = script,
     )
 
-    files = [ctx.executable._ktlint_tool] + ctx.files.srcs
+    files = [ktlint_info.files_to_run.executable] + ctx.files.srcs
     if editorconfig:
         files.append(editorconfig)
 
@@ -49,13 +52,16 @@ def _ktlint_test_impl(ctx):
             runfiles = ctx.runfiles(
                 files = files,
                 transitive_files = ctx.attr._javabase[java_common.JavaRuntimeInfo].files,
-            ).merge(ctx.attr._ktlint_tool[DefaultInfo].default_runfiles),
+            ).merge(ktlint_info.default_runfiles),
             executable = ctx.outputs.executable,
         ),
     ]
 
-ktlint_test = rule(
-    _ktlint_test_impl,
+ktlint_test = utils.configure_rule(
+    implementation = _ktlint_test_impl,
+    configurations = [
+        ktlint.rule_configuration,
+    ],
     attrs = {
         "srcs": attr.label_list(
             allow_files = [".kt", ".kts"],
@@ -68,11 +74,6 @@ ktlint_test = rule(
             providers = [
                 [KtlintConfigInfo],
             ],
-        ),
-        "_ktlint_tool": attr.label(
-            default = "@com_github_pinterest_ktlint//file",
-            executable = True,
-            cfg = "host",
         ),
         "_javabase": attr.label(
             default = "@bazel_tools//tools/jdk:current_java_runtime",

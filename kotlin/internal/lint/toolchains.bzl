@@ -1,4 +1,4 @@
-# Define toolchains for ktlint_common
+# Define toolchains for ktlint
 
 TOOLCHAIN_TYPE = Label("//kotlin/internal/lint:toolchain_type")
 DEFAULT_TOOLCHAIN = Label("//kotlin/internal/lint:default")
@@ -7,7 +7,7 @@ RUN_FIX_TEMPLATE = Label("//kotlin/internal/lint:ktlint_fix.template.sh")
 def _ktlint_toolchain_impl(ctx):
     return [
         platform_common.ToolchainInfo(
-            binary = ctx.executable.binary,
+            tool_info = ctx.attr.tool[DefaultInfo],
             run_fix_template = ctx.file.run_fix_template,
         ),
     ]
@@ -15,7 +15,7 @@ def _ktlint_toolchain_impl(ctx):
 ktlint_toolchain = rule(
     implementation = _ktlint_toolchain_impl,
     attrs = {
-        "binary": attr.label(
+        "tool": attr.label(
             default = "@com_github_pinterest_ktlint//file",
             executable = True,
             cfg = "target",
@@ -39,7 +39,7 @@ def configure_toolchains():
 
     ktlint_toolchain(
         name = DEFAULT_TOOLCHAIN.name + "_impl",
-        binary = "@com_github_pinterest_ktlint//file",
+        tool = "@com_github_pinterest_ktlint//file",
     )
     native.toolchain(
         name = DEFAULT_TOOLCHAIN.name,

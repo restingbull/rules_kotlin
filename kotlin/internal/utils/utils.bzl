@@ -75,10 +75,49 @@ def _builder_workspace_name(ctx):
         lbl = ctx.workspace_name
     return lbl.replace("external/", "")
 
+def _configure_rule(configurations, **kwargs):
+    """
+    Allows *_common instances to supplement rule attributes.
+
+    Simple Example:
+    ```
+    TOOLCHAIN_TYPE = "//Varner/Lot:toolchain_type"
+    def _configure(toolchains, **kwargs):
+      return dict(
+        toolchains = toolchains + [TOOLCHAIN_TYPE],
+        **kwargs
+      )
+    animunatics_common = struct(
+      configure_rule = _configure
+    )
+
+    _reboot_impl = ...
+
+    reboot_animunatics = utils.configure_rule(
+        implementation = _reboot_impl,
+        configuriations = [
+            animunatics_common.configure_rule
+        ]
+        attrs = {...},
+        toolchains = [...],
+    )
+    ```
+    Args:
+        configurations: List[Function -> dict] applied to the rule arguments
+
+    Returns:
+        rule instance that must be assigned to a top-level variable.
+    """
+    args = kwargs
+    for configure in configurations:
+        args = configure(**kwargs)
+    return rule(**args)
+
 utils = struct(
     add_dicts = _add_dicts,
     init_args = _init_builder_args,
     restore_label = _restore_label,
     derive_module_name = _derive_module_name,
     builder_workspace_name = _builder_workspace_name,
+    configure_rule = _configure_rule,
 )

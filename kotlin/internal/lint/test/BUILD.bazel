@@ -1,0 +1,5 @@
+load(":tests.bzl", "ktlint_test_suite")
+
+ktlint_test_suite(
+    name = "test",
+)
