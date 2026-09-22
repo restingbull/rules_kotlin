@@ -1077,6 +1077,204 @@ def _phase_ksp(
         ksp_generated_class_jar = ksp_outputs.ksp_generated_class_jar,
     )
 
+def _phase_kotlin(
+        ctx,
+        rule_kind,
+        toolchains,
+        srcs,
+        extra_src_jars,
+        compile_deps,
+        deps_artifacts,
+        annotation_processors,
+        transitive_runtime_jars,
+        plugins):
+    """Kotlin compile phase: runs KotlinCompile, returns an immutable struct.
+
+    This phase appends to no caller-owned list; every output flows through the
+    returned struct and the orchestrator folds it into the shared lists. Guard:
+    with no Kotlin sources it is a no-op empty struct. `extra_src_jars` is the
+    KAPT+KSP generated source jars from the pre-pass phases, passed explicitly.
+
+    Returns:
+        struct(
+            compile_jars = [File],               # the Kotlin ABI jar
+            output_jars = [File],                # the Kotlin full runtime jar
+            extra_stubs_java_infos = [JavaInfo], # neverlink full-output stubs for the java pass
+            java_info = JavaInfo | None,         # Kotlin JavaInfo, or None when no kt sources
+        )
+    """
+    has_kt_sources = srcs.kt or srcs.src_jars
+    if not has_kt_sources:
+        return struct(
+            compile_jars = [],
+            output_jars = [],
+            extra_stubs_java_infos = [],
+            java_info = None,
+        )
+
+    kt_runtime_jar = ctx.actions.declare_file(ctx.label.name + "-kt.jar")
+    if not "kt_abi_plugin_incompatible" in ctx.attr.tags and toolchains.kt.experimental_use_abi_jars == True:
+        kt_compile_jar = ctx.actions.declare_file(ctx.label.name + "-kt.abi.jar")
+        outputs = {
+            "abi_jar": kt_compile_jar,
+            "output": kt_runtime_jar,
+        }
+    else:
+        kt_compile_jar = kt_runtime_jar
+        outputs = {
+            "output": kt_runtime_jar,
+        }
+
+    kt_jdeps = None
+    if toolchains.kt.jvm_emit_jdeps:
+        kt_jdeps = ctx.actions.declare_file(ctx.label.name + "-kt.jdeps")
+        outputs["kotlin_output_jdeps"] = kt_jdeps
+
+    _run_kt_builder_action(
+        ctx = ctx,
+        rule_kind = rule_kind,
+        toolchains = toolchains,
+        srcs = srcs,
+        generated_src_jars = extra_src_jars,
+        compile_deps = compile_deps,
+        deps_artifacts = deps_artifacts,
+        annotation_processors = [],
+        transitive_runtime_jars = transitive_runtime_jars,
+        plugins = plugins,
+        outputs = outputs,
+        build_kotlin = True,
+        mnemonic = "KotlinCompile",
+    )
+
+    extra_stubs_java_infos = []
+    if not annotation_processors or not srcs.kt:
+        # Compile the java half of this target against the FULL Kotlin output, not the ABI;
+        extra_stubs_java_infos.append(JavaInfo(compile_jar = kt_runtime_jar, output_jar = kt_runtime_jar, neverlink = True))
+
+    kt_java_info = JavaInfo(
+        output_jar = kt_runtime_jar,
+        compile_jar = kt_compile_jar,
+        jdeps = kt_jdeps,
+        deps = compile_deps.deps,
+        runtime_deps = compile_deps.runtime_deps,
+        exports = compile_deps.exports,
+        neverlink = getattr(ctx.attr, "neverlink", False),
+    )
+    return struct(
+        compile_jars = [kt_compile_jar],
+        output_jars = [kt_runtime_jar],
+        extra_stubs_java_infos = extra_stubs_java_infos,
+        java_info = kt_java_info,
+    )
+
+def _phase_java(
+        ctx,
+        toolchains,
+        srcs,
+        generated_kapt_src_jars,
+        generated_ksp_src_jars,
+        compile_deps,
+        stubs_java_infos,
+        plugin_java_infos):
+    """Java compile phase: runs JavaCompile, returns an immutable struct.
+
+    This phase appends to no caller-owned list; every output flows through the
+    returned struct and the orchestrator folds it into the shared lists. Guard:
+    with no java sources, no KAPT-generated sources, no source jars and no
+    java-generating KSP sources it is a no-op empty struct. The KAPT/KSP
+    generated source jars and the neverlink stubs (`stubs_java_infos` =
+    kapt.stubs + kotlin.extra_stubs) are passed explicitly, never read from a
+    shared list.
+
+    Returns:
+        struct(
+            compile_jars = [File],              # java ABI (ijar) outputs
+            output_jars = [File],               # java class-jar outputs
+            java_info = JavaInfo | None,        # java pass JavaInfo, or None when skipped
+            ap_generated_src_jar = File | None, # java AP-generated source jar, or None
+        )
+    """
+
+    # If there is Java source or KAPT/KSP generated Java source compile that Java and fold it into
+    # the final ABI jar. Otherwise just use the KT ABI jar as final ABI jar.
+    ksp_generated_java_src_jars = generated_ksp_src_jars and is_ksp_processor_generating_java(ctx.attr.plugins)
+    if not (srcs.java or generated_kapt_src_jars or srcs.src_jars or ksp_generated_java_src_jars):
+        return struct(
+            compile_jars = [],
+            output_jars = [],
+            java_info = None,
+            ap_generated_src_jar = None,
+        )
+
+    javac_options = ctx.attr.javac_opts[JavacOptions] if ctx.attr.javac_opts else toolchains.kt.javac_options
+    javac_opts = []
+
+    # Kotlin takes care of annotation processing. Note that JavaBuilder "discovers"
+    # annotation processors in `deps` also.
+    if len(srcs.kt) > 0 and not javac_options.no_proc:
+        javac_opts.append("-proc:none")
+
+    # The Kotlin compiler reads .kt sources as hard-coded UTF-8
+    # Compile java half of a mixed target accordingly.
+    javac_opts.extend(["-encoding", "UTF-8"])
+
+    # Compile the Java half for the same effective jvm_target, the kotlin part is compiled for.
+    kotlinc_options = ctx.attr.kotlinc_opts[KotlincOptions] if ctx.attr.kotlinc_opts else toolchains.kt.kotlinc_options
+    jvm_target = kotlinc_options.jvm_target if (kotlinc_options and kotlinc_options.jvm_target) else toolchains.kt.jvm_target
+    if jvm_target:
+        if toolchains.kt.experimental_build_tools_api:
+            # For BTA compiler, when linking against a platform different from the compiler's own JVM,
+            # use --release flag to ensure the JDK API version corresponds to selected jvmTarget.
+            javac_opts.extend(_utils.javac_jvm_target_flags(jvm_target, toolchains.java.java_runtime.version))
+        else:
+            javac_opts.extend(_utils.javac_jvm_target_flags(jvm_target))
+
+    # JavaBuilder gives later --release/-source/-target flags precedence. Keep explicit javac
+    # options after the flags derived from the Kotlin target so an explicit release is honored.
+    javac_opts.extend(javac_options_to_flags(javac_options))
+    javac_opts.extend([
+        flag
+        for plugin in ctx.attr.plugins
+        if JavacOptions in plugin
+        for flag in javac_options_to_flags(plugin[JavacOptions])
+    ])
+
+    # Compile the Java half with the same warning mode as the kotlin part, unless the javac
+    # options (or a plugin's) already set one: a single `warn` value governs the whole target.
+    # A per-diagnostic level in `x_warning_level` limits the derivation, because javac has no
+    # equivalent of `-Xwarning-level`. A diagnostic kept at `warning` or `disabled` under
+    # `warn = "error"` must not turn every javac warning into an error, and a diagnostic raised
+    # to `warning` or `error` under `warn = "off"` must not silence every javac warning.
+    if "-nowarn" not in javac_opts and "-Werror" not in javac_opts:
+        kotlinc_warn = getattr(kotlinc_options, "warn", None) if kotlinc_options else None
+        warning_levels = (getattr(kotlinc_options, "x_warning_level", None) if kotlinc_options else None) or {}
+        levels = warning_levels.values()
+        if kotlinc_warn == "off" and "error" not in levels and "warning" not in levels:
+            javac_opts.append("-nowarn")
+        elif kotlinc_warn == "error" and "warning" not in levels and "disabled" not in levels:
+            javac_opts.append("-Werror")
+
+    java_info = java_common.compile(
+        ctx,
+        source_files = srcs.java,
+        source_jars = generated_kapt_src_jars + srcs.src_jars + (generated_ksp_src_jars if ksp_generated_java_src_jars else []),
+        output = ctx.actions.declare_file(ctx.label.name + "-java.jar"),
+        deps = compile_deps.java_deps + stubs_java_infos + plugin_java_infos,
+        java_toolchain = toolchains.java,
+        plugins = _plugin_mappers.targets_to_annotation_processors_java_plugin_info(ctx.attr.plugins),
+        javac_opts = javac_opts,
+        neverlink = getattr(ctx.attr, "neverlink", False),
+        strict_deps = toolchains.kt.experimental_strict_kotlin_deps,
+    )
+    ap_generated_src_jar = java_info.annotation_processing.source_jar
+    java_outputs = java_info.java_outputs if hasattr(java_info, "java_outputs") else java_info.outputs.jars
+    return struct(
+        compile_jars = [jars.ijar for jars in java_outputs],
+        output_jars = [jars.class_jar for jars in java_outputs],
+        java_info = java_info,
+        ap_generated_src_jar = ap_generated_src_jar,
+    )
+
 def _run_kt_java_builder_actions(
         ctx,
         rule_kind,
@@ -1101,8 +1299,6 @@ def _run_kt_java_builder_actions(
     """
     compile_jars = []
     output_jars = []
-    kt_stubs_for_java = []
-    has_kt_sources = srcs.kt or srcs.src_jars
 
     # Run KAPT pre-pass phase and fold its immutable result into the shared lists.
     kapt_phase = _phase_kapt(
@@ -1118,7 +1314,6 @@ def _run_kt_java_builder_actions(
     )
     generated_kapt_src_jars.extend(kapt_phase.generated_src_jars)
     output_jars.extend(kapt_phase.output_class_jars)
-    kt_stubs_for_java.extend(kapt_phase.stubs_java_infos)
 
     # Run KSP pre-pass phase and fold its immutable result into the shared lists.
     ksp_phase = _phase_ksp(
@@ -1138,135 +1333,40 @@ def _run_kt_java_builder_actions(
     java_infos = []
     ap_generated_src_jar = None
 
-    # Build Kotlin
-    if has_kt_sources:
-        kt_runtime_jar = ctx.actions.declare_file(ctx.label.name + "-kt.jar")
-        if not "kt_abi_plugin_incompatible" in ctx.attr.tags and toolchains.kt.experimental_use_abi_jars == True:
-            kt_compile_jar = ctx.actions.declare_file(ctx.label.name + "-kt.abi.jar")
-            outputs = {
-                "abi_jar": kt_compile_jar,
-                "output": kt_runtime_jar,
-            }
-        else:
-            kt_compile_jar = kt_runtime_jar
-            outputs = {
-                "output": kt_runtime_jar,
-            }
+    # Run the Kotlin compile phase and fold its immutable result into the shared lists.
+    kotlin_phase = _phase_kotlin(
+        ctx,
+        rule_kind = rule_kind,
+        toolchains = toolchains,
+        srcs = srcs,
+        extra_src_jars = generated_kapt_src_jars + generated_ksp_src_jars,
+        compile_deps = compile_deps,
+        deps_artifacts = deps_artifacts,
+        annotation_processors = annotation_processors,
+        transitive_runtime_jars = transitive_runtime_jars,
+        plugins = plugins,
+    )
+    compile_jars.extend(kotlin_phase.compile_jars)
+    output_jars.extend(kotlin_phase.output_jars)
+    if kotlin_phase.java_info:
+        java_infos.append(kotlin_phase.java_info)
 
-        kt_jdeps = None
-        if toolchains.kt.jvm_emit_jdeps:
-            kt_jdeps = ctx.actions.declare_file(ctx.label.name + "-kt.jdeps")
-            outputs["kotlin_output_jdeps"] = kt_jdeps
-
-        _run_kt_builder_action(
-            ctx = ctx,
-            rule_kind = rule_kind,
-            toolchains = toolchains,
-            srcs = srcs,
-            generated_src_jars = generated_kapt_src_jars + generated_ksp_src_jars,
-            compile_deps = compile_deps,
-            deps_artifacts = deps_artifacts,
-            annotation_processors = [],
-            transitive_runtime_jars = transitive_runtime_jars,
-            plugins = plugins,
-            outputs = outputs,
-            build_kotlin = True,
-            mnemonic = "KotlinCompile",
-        )
-
-        compile_jars.append(kt_compile_jar)
-        output_jars.append(kt_runtime_jar)
-        if not annotation_processors or not srcs.kt:
-            # Compile the java half of this target against the FULL Kotlin output, not the ABI;
-            kt_stubs_for_java.append(JavaInfo(compile_jar = kt_runtime_jar, output_jar = kt_runtime_jar, neverlink = True))
-
-        kt_java_info = JavaInfo(
-            output_jar = kt_runtime_jar,
-            compile_jar = kt_compile_jar,
-            jdeps = kt_jdeps,
-            deps = compile_deps.deps,
-            runtime_deps = compile_deps.runtime_deps,
-            exports = compile_deps.exports,
-            neverlink = getattr(ctx.attr, "neverlink", False),
-        )
-        java_infos.append(kt_java_info)
-
-    # Build Java
-    # If there is Java source or KAPT/KSP generated Java source compile that Java and fold it into
-    # the final ABI jar. Otherwise just use the KT ABI jar as final ABI jar.
-    ksp_generated_java_src_jars = generated_ksp_src_jars and is_ksp_processor_generating_java(ctx.attr.plugins)
-    if srcs.java or generated_kapt_src_jars or srcs.src_jars or ksp_generated_java_src_jars:
-        javac_options = ctx.attr.javac_opts[JavacOptions] if ctx.attr.javac_opts else toolchains.kt.javac_options
-        javac_opts = []
-
-        # Kotlin takes care of annotation processing. Note that JavaBuilder "discovers"
-        # annotation processors in `deps` also.
-        if len(srcs.kt) > 0 and not javac_options.no_proc:
-            javac_opts.append("-proc:none")
-
-        # The Kotlin compiler reads .kt sources as hard-coded UTF-8
-        # Compile java half of a mixed target accordingly.
-        javac_opts.extend(["-encoding", "UTF-8"])
-
-        # Compile the Java half for the same effective jvm_target, the kotlin part is compiled for.
-        kotlinc_options = ctx.attr.kotlinc_opts[KotlincOptions] if ctx.attr.kotlinc_opts else toolchains.kt.kotlinc_options
-        jvm_target = kotlinc_options.jvm_target if (kotlinc_options and kotlinc_options.jvm_target) else toolchains.kt.jvm_target
-        if jvm_target:
-            if toolchains.kt.experimental_build_tools_api:
-                # For BTA compiler, when linking against a platform different from the compiler's own JVM,
-                # use --release flag to ensure the JDK API version corresponds to selected jvmTarget.
-                javac_opts.extend(_utils.javac_jvm_target_flags(jvm_target, toolchains.java.java_runtime.version))
-            else:
-                javac_opts.extend(_utils.javac_jvm_target_flags(jvm_target))
-
-        # JavaBuilder gives later --release/-source/-target flags precedence. Keep explicit javac
-        # options after the flags derived from the Kotlin target so an explicit release is honored.
-        javac_opts.extend(javac_options_to_flags(javac_options))
-        javac_opts.extend([
-            flag
-            for plugin in ctx.attr.plugins
-            if JavacOptions in plugin
-            for flag in javac_options_to_flags(plugin[JavacOptions])
-        ])
-
-        # Compile the Java half with the same warning mode as the kotlin part, unless the javac
-        # options (or a plugin's) already set one: a single `warn` value governs the whole target.
-        # A per-diagnostic level in `x_warning_level` limits the derivation, because javac has no
-        # equivalent of `-Xwarning-level`. A diagnostic kept at `warning` or `disabled` under
-        # `warn = "error"` must not turn every javac warning into an error, and a diagnostic raised
-        # to `warning` or `error` under `warn = "off"` must not silence every javac warning.
-        if "-nowarn" not in javac_opts and "-Werror" not in javac_opts:
-            kotlinc_warn = getattr(kotlinc_options, "warn", None) if kotlinc_options else None
-            warning_levels = (getattr(kotlinc_options, "x_warning_level", None) if kotlinc_options else None) or {}
-            levels = warning_levels.values()
-            if kotlinc_warn == "off" and "error" not in levels and "warning" not in levels:
-                javac_opts.append("-nowarn")
-            elif kotlinc_warn == "error" and "warning" not in levels and "disabled" not in levels:
-                javac_opts.append("-Werror")
-
-        java_info = java_common.compile(
-            ctx,
-            source_files = srcs.java,
-            source_jars = generated_kapt_src_jars + srcs.src_jars + (generated_ksp_src_jars if ksp_generated_java_src_jars else []),
-            output = ctx.actions.declare_file(ctx.label.name + "-java.jar"),
-            deps = compile_deps.java_deps + kt_stubs_for_java + [p[JavaInfo] for p in ctx.attr.plugins if JavaInfo in p],
-            java_toolchain = toolchains.java,
-            plugins = _plugin_mappers.targets_to_annotation_processors_java_plugin_info(ctx.attr.plugins),
-            javac_opts = javac_opts,
-            neverlink = getattr(ctx.attr, "neverlink", False),
-            strict_deps = toolchains.kt.experimental_strict_kotlin_deps,
-        )
-        ap_generated_src_jar = java_info.annotation_processing.source_jar
-        java_outputs = java_info.java_outputs if hasattr(java_info, "java_outputs") else java_info.outputs.jars
-        compile_jars = compile_jars + [
-            jars.ijar
-            for jars in java_outputs
-        ]
-        output_jars = output_jars + [
-            jars.class_jar
-            for jars in java_outputs
-        ]
-        java_infos.append(java_info)
+    # Run the Java compile phase and fold its immutable result into the shared lists.
+    java_phase = _phase_java(
+        ctx,
+        toolchains = toolchains,
+        srcs = srcs,
+        generated_kapt_src_jars = generated_kapt_src_jars,
+        generated_ksp_src_jars = generated_ksp_src_jars,
+        compile_deps = compile_deps,
+        stubs_java_infos = kapt_phase.stubs_java_infos + kotlin_phase.extra_stubs_java_infos,
+        plugin_java_infos = [p[JavaInfo] for p in ctx.attr.plugins if JavaInfo in p],
+    )
+    compile_jars.extend(java_phase.compile_jars)
+    output_jars.extend(java_phase.output_jars)
+    if java_phase.java_info:
+        java_infos.append(java_phase.java_info)
+    ap_generated_src_jar = java_phase.ap_generated_src_jar
 
     # Merge ABI jars into final compile jar.
     _fold_jars_action(
