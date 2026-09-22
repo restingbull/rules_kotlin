@@ -1,0 +1,19 @@
+actions {
+  target_id: 1
+  mnemonic: "Javac"
+  configuration_id: 1
+  arguments: "/Users/alice/ws/execroot/_main/bin/javac"
+  arguments: "-d"
+  arguments: "bazel-out/k8-fastbuild-ST-1a2b3c4d/bin/pkg/_javac/Lib"
+  primary_output_id: 11
+}
+actions {
+  target_id: 1
+  mnemonic: "KotlinCompile"
+  configuration_id: 1
+  arguments: "/Users/alice/ws/execroot/_main/external/rules_kotlin/kotlinc"
+  arguments: "-d"
+  arguments: "bazel-out/k8-fastbuild-ST-1a2b3c4d/bin/pkg/Lib.jar"
+  arguments: "-Xreport-perf"
+  primary_output_id: 10
+}

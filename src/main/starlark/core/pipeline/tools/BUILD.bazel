@@ -1,0 +1,30 @@
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+# Pure-text normalizer + differ for `bazel aquery --output=textproto` dumps.
+# Later pipeline-extraction steps invoke this by label to gate on a
+# byte-identical aquery across a behaviour-preserving edit.
+sh_binary(
+    name = "aquery_normalize_diff",
+    srcs = ["aquery_normalize_diff.sh"],
+    visibility = ["//visibility:public"],
+)
+
+# Self-test of the normalizer over hand-authored textproto fixtures in the
+# SAME package. Pure text over testdata; performs no recursive bazel call.
+sh_test(
+    name = "aquery_gate_selftest",
+    srcs = ["aquery_gate_selftest.sh"],
+    args = [
+        "$(location aquery_normalize_diff.sh)",
+        "$(location testdata/identical_a.textproto)",
+        "$(location testdata/identical_b.textproto)",
+        "$(location testdata/changed.textproto)",
+    ],
+    data = [
+        "aquery_normalize_diff.sh",
+        "testdata/changed.textproto",
+        "testdata/identical_a.textproto",
+        "testdata/identical_b.textproto",
+    ],
+)
