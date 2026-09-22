@@ -67,13 +67,6 @@ versions = struct(
             "https://github.com/bazelbuild/rules_jvm_external/releases/download/{version}/rules_jvm_external-{version}.tar.gz",
         ],
     ),
-    PINTEREST_KTLINT = version(
-        version = "1.8.0",
-        url_templates = [
-            "https://github.com/pinterest/ktlint/releases/download/{version}/ktlint",
-        ],
-        sha256 = "a3fd620207d5c40da6ca789b95e7f823c54e854b7fade7f613e91096a3706d75",
-    ),
     KOTLIN_CURRENT_COMPILER_RELEASE = version(
         version = _KOTLIN_CURRENT_RELEASE,
         url_templates = [
@@ -87,15 +80,6 @@ versions = struct(
             "https://github.com/google/ksp/releases/download/{version}/artifacts.zip",
         ],
         sha256 = "31e83f087c3e822d16d93b2fd240769872ba1fad26e7f3b5dfb3f71513e7399f",
-    ),
-    # Starting with Kotlin 2.4.0 the Build Tools API interfaces are no longer bundled in
-    # kotlin-compiler.jar, so they must be provided as a separate jar.
-    KOTLIN_BUILD_TOOLS_API = version(
-        version = _KOTLIN_CURRENT_RELEASE,
-        url_templates = [
-            "https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-build-tools-api/{version}/kotlin-build-tools-api-{version}.jar",
-        ],
-        sha256 = "47a622dce7231b1916334b69a00bc1094adf6577e6492f9f06b3d9c2450fe459",
     ),
     # The Build Tools API implementation of the current release and the embeddable compiler family
     # it loads: the Maven-published kotlinc build whose bundled third-party packages are shaded
@@ -135,27 +119,6 @@ versions = struct(
         ],
         sha256 = "26d4021f6898e23b82ef953078389dd49ac2b5618ac564ade4ef87cced147b38",
     ),
-    KOTLINX_SERIALIZATION_CORE_JVM = version(
-        version = "1.8.1",
-        url_templates = [
-            "https://repo1.maven.org/maven2/org/jetbrains/kotlinx/kotlinx-serialization-core-jvm/{version}/kotlinx-serialization-core-jvm-{version}.jar",
-        ],
-        sha256 = "3565b6d4d789bf70683c45566944287fc1d8dc75c23d98bd87d01059cc76f2b3",
-    ),
-    KOTLINX_SERIALIZATION_JSON = version(
-        version = "1.8.1",
-        url_templates = [
-            "https://repo1.maven.org/maven2/org/jetbrains/kotlinx/kotlinx-serialization-json/{version}/kotlinx-serialization-json-{version}.jar",
-        ],
-        sha256 = "58adf3358a0f99dd8d66a550fbe19064d395e0d5f7f1e46515cd3470a56fbbb0",
-    ),
-    KOTLINX_SERIALIZATION_JSON_JVM = version(
-        version = "1.8.1",
-        url_templates = [
-            "https://repo1.maven.org/maven2/org/jetbrains/kotlinx/kotlinx-serialization-json-jvm/{version}/kotlinx-serialization-json-jvm-{version}.jar",
-        ],
-        sha256 = "8769e5647557e3700919c32d508f5c5dad53c5d8234cd10846354fbcff14aa24",
-    ),
     PY_ABSL = version(
         version = "2.1.0",
         sha256 = "8a3d0830e4eb4f66c4fa907c06edf6ce1c719ced811a12e26d9d3162f8471758",
@@ -169,13 +132,6 @@ versions = struct(
         url_templates = ["https://github.com/bazelbuild/rules_cc/releases/download/{version}/rules_cc-{version}.tar.gz"],
         sha256 = "bbf1ae2f83305b7053b11e4467d317a7ba3517a12cef608543c1b1c5bf48a4df",
         strip_prefix_template = "rules_cc-{version}",
-    ),
-    KOTLINX_COROUTINES_CORE_JVM = version(
-        version = "1.10.2",
-        url_templates = [
-            "https://repo1.maven.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/{version}/kotlinx-coroutines-core-jvm-{version}.jar",
-        ],
-        sha256 = "5ca175b38df331fd64155b35cd8cae1251fa9ee369709b36d42e0a288ccce3fd",
     ),
     use_repository = _use_repository,
 )
