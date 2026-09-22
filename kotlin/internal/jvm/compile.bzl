@@ -972,6 +972,111 @@ def _kt_jvm_produce_output_jar_actions(
         ),
     )
 
+def _phase_kapt(
+        ctx,
+        rule_kind,
+        toolchains,
+        srcs,
+        compile_deps,
+        deps_artifacts,
+        annotation_processors,
+        transitive_runtime_jars,
+        plugins):
+    """KAPT pre-pass phase: runs annotation processing, returns an immutable struct.
+
+    This phase appends to no caller-owned list; every output flows through the
+    returned struct and the orchestrator folds it into the shared lists. Guard:
+    with no Kotlin sources or no annotation processors it is a no-op empty struct.
+
+    Returns:
+        struct(
+            generated_src_jars = [File],        # KAPT-generated source jars
+            output_class_jars = [File],         # KAPT-generated class jars
+            stubs_java_infos = [JavaInfo],      # neverlink stubs for the java pass
+            ap_generated_src_jar = File | None, # the single AP source jar, or None
+        )
+    """
+    has_kt_sources = srcs.kt or srcs.src_jars
+    if not (has_kt_sources and annotation_processors):
+        return struct(
+            generated_src_jars = [],
+            output_class_jars = [],
+            stubs_java_infos = [],
+            ap_generated_src_jar = None,
+        )
+
+    kapt_outputs = _run_kapt_builder_actions(
+        ctx,
+        rule_kind = rule_kind,
+        toolchains = toolchains,
+        srcs = srcs,
+        compile_deps = compile_deps,
+        deps_artifacts = deps_artifacts,
+        annotation_processors = annotation_processors,
+        transitive_runtime_jars = transitive_runtime_jars,
+        plugins = plugins,
+    )
+    return struct(
+        generated_src_jars = [kapt_outputs.ap_generated_src_jar],
+        output_class_jars = [kapt_outputs.kapt_generated_class_jar],
+        stubs_java_infos = [
+            JavaInfo(
+                compile_jar = kapt_outputs.kapt_generated_stub_jar,
+                output_jar = kapt_outputs.kapt_generated_stub_jar,
+                neverlink = True,
+            ),
+        ],
+        ap_generated_src_jar = kapt_outputs.ap_generated_src_jar,
+    )
+
+def _phase_ksp(
+        ctx,
+        toolchains,
+        srcs,
+        compile_deps,
+        ksp_annotation_processors,
+        transitive_runtime_jars,
+        ksp_options):
+    """KSP pre-pass phase: runs symbol processing, returns an immutable struct.
+
+    This phase appends to no caller-owned list; every output flows through the
+    returned struct and the orchestrator folds it into the shared lists. Guard:
+    with no Kotlin sources or no KSP processors it is a no-op empty struct. The
+    guard keys on ksp_annotation_processors (not ksp_options) so a KSP processor
+    that declares no options still runs, preserving the pre-extraction behavior.
+
+    Returns:
+        struct(
+            generated_src_jars = [File],         # KSP-generated source jars
+            output_class_jars = [File],          # KSP-generated class jars
+            ksp_generated_src_jar = File | None, # the single KSP source jar, or None
+            ksp_generated_class_jar = File | None, # the single KSP class jar, or None
+        )
+    """
+    has_kt_sources = srcs.kt or srcs.src_jars
+    if not (has_kt_sources and ksp_annotation_processors):
+        return struct(
+            generated_src_jars = [],
+            output_class_jars = [],
+            ksp_generated_src_jar = None,
+            ksp_generated_class_jar = None,
+        )
+
+    ksp_outputs = _run_ksp_builder_actions(
+        ctx,
+        toolchains = toolchains,
+        srcs = srcs,
+        compile_deps = compile_deps,
+        transitive_runtime_jars = transitive_runtime_jars,
+        ksp_options = ksp_options,
+    )
+    return struct(
+        generated_src_jars = [ksp_outputs.ksp_generated_src_jar],
+        output_class_jars = [ksp_outputs.ksp_generated_class_jar],
+        ksp_generated_src_jar = ksp_outputs.ksp_generated_src_jar,
+        ksp_generated_class_jar = ksp_outputs.ksp_generated_class_jar,
+    )
+
 def _run_kt_java_builder_actions(
         ctx,
         rule_kind,
@@ -999,45 +1104,36 @@ def _run_kt_java_builder_actions(
     kt_stubs_for_java = []
     has_kt_sources = srcs.kt or srcs.src_jars
 
-    # Run KAPT
-    if has_kt_sources and annotation_processors:
-        kapt_outputs = _run_kapt_builder_actions(
-            ctx,
-            rule_kind = rule_kind,
-            toolchains = toolchains,
-            srcs = srcs,
-            compile_deps = compile_deps,
-            deps_artifacts = deps_artifacts,
-            annotation_processors = annotation_processors,
-            transitive_runtime_jars = transitive_runtime_jars,
-            plugins = plugins,
-        )
-        generated_kapt_src_jars.append(kapt_outputs.ap_generated_src_jar)
-        output_jars.append(kapt_outputs.kapt_generated_class_jar)
-        kt_stubs_for_java.append(
-            JavaInfo(
-                compile_jar = kapt_outputs.kapt_generated_stub_jar,
-                output_jar = kapt_outputs.kapt_generated_stub_jar,
-                neverlink = True,
-            ),
-        )
+    # Run KAPT pre-pass phase and fold its immutable result into the shared lists.
+    kapt_phase = _phase_kapt(
+        ctx,
+        rule_kind = rule_kind,
+        toolchains = toolchains,
+        srcs = srcs,
+        compile_deps = compile_deps,
+        deps_artifacts = deps_artifacts,
+        annotation_processors = annotation_processors,
+        transitive_runtime_jars = transitive_runtime_jars,
+        plugins = plugins,
+    )
+    generated_kapt_src_jars.extend(kapt_phase.generated_src_jars)
+    output_jars.extend(kapt_phase.output_class_jars)
+    kt_stubs_for_java.extend(kapt_phase.stubs_java_infos)
 
-    # Run KSP
-    ksp_generated_class_jar = None
-    ksp_generated_src_jar = None
-    if has_kt_sources and ksp_annotation_processors:
-        ksp_outputs = _run_ksp_builder_actions(
-            ctx,
-            toolchains = toolchains,
-            srcs = srcs,
-            compile_deps = compile_deps,
-            transitive_runtime_jars = ksp_transitive_runtime_jars,
-            ksp_options = ksp_options,
-        )
-        ksp_generated_class_jar = ksp_outputs.ksp_generated_class_jar
-        output_jars.append(ksp_generated_class_jar)
-        ksp_generated_src_jar = ksp_outputs.ksp_generated_src_jar
-        generated_ksp_src_jars.append(ksp_generated_src_jar)
+    # Run KSP pre-pass phase and fold its immutable result into the shared lists.
+    ksp_phase = _phase_ksp(
+        ctx,
+        toolchains = toolchains,
+        srcs = srcs,
+        compile_deps = compile_deps,
+        ksp_annotation_processors = ksp_annotation_processors,
+        transitive_runtime_jars = ksp_transitive_runtime_jars,
+        ksp_options = ksp_options,
+    )
+    generated_ksp_src_jars.extend(ksp_phase.generated_src_jars)
+    output_jars.extend(ksp_phase.output_class_jars)
+    ksp_generated_class_jar = ksp_phase.ksp_generated_class_jar
+    ksp_generated_src_jar = ksp_phase.ksp_generated_src_jar
 
     java_infos = []
     ap_generated_src_jar = None
