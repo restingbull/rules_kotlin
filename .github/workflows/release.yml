@@ -35,4 +35,13 @@ jobs:
           generate_release_notes: true
           body_path: release_notes.txt
           fail_on_unmatched_files: true
-          files: rules_kotlin-*.tar.gz
+          files: |
+            rules_kotlin-*.tar.gz
+            kotlin_worker.jar
+            jdeps_merger_worker.jar
+            ksp2_worker.jar
+            ksp2_invoker.jar
+            skip-code-gen.jar
+            jdeps-gen.jar
+            skip-code-gen-embeddable.jar
+            jdeps-gen-embeddable.jar
