@@ -1275,6 +1275,93 @@ def _phase_java(
         ap_generated_src_jar = ap_generated_src_jar,
     )
 
+def _phase_abi(ctx, rule_kind, toolchains, compile_jars, compile_jar):
+    """ABI fold phase: folds the per-pass ABI jars into the final compile jar.
+
+    Read-side aggregation: consumes the compile_jars accumulated by the Kotlin
+    and Java passes and writes the single `<name>.abi.jar` compile jar via the
+    KotlinFoldJarsAbi action. `compile_jar` is the declared output File, passed
+    in so the caller's JavaInfo references the same File. No shared-list reads:
+    compile_jars is an explicit argument.
+
+    Returns:
+        struct(compile_jar = File)  # the folded compile jar
+    """
+    _fold_jars_action(
+        ctx,
+        rule_kind = rule_kind,
+        toolchains = toolchains,
+        output_jar = compile_jar,
+        action_type = "Abi",
+        input_jars = compile_jars,
+    )
+    return struct(compile_jar = compile_jar)
+
+def _phase_jdeps(ctx, toolchains, java_infos, compile_deps, output_jdeps):
+    """Jdeps aggregation phase: the FINAL aggregation stage of the pipeline.
+
+    Merges the per-phase jdeps carried by `java_infos` (Kotlin + Java) into the
+    target's `output_jdeps` via the JdepsMerge action, uniformly consuming
+    compile_deps.deps (plus the associate + classpath jars the merge action
+    needs as inputs for sandboxing when report_unused_deps is enabled) so the
+    action stays byte-identical across every toolchain configuration. When no
+    per-phase jdeps are present it symlinks the toolchain's empty_jdeps, as
+    before. No shared-list reads: java_infos and compile_deps are explicit args.
+
+    Returns:
+        struct(output_jdeps = File)  # the merged (or symlinked) jdeps
+    """
+    jdeps = []
+    for java_info in java_infos:
+        if java_info.outputs.jdeps:
+            jdeps.append(java_info.outputs.jdeps)
+
+    if jdeps:
+        _run_merge_jdeps_action(
+            ctx = ctx,
+            toolchains = toolchains,
+            jdeps = jdeps,
+            deps = compile_deps.deps,
+            associate_jars = compile_deps.associate_jars,
+            outputs = {"output": output_jdeps},
+            classpath_jars = compile_deps.compile_jars,
+        )
+    else:
+        ctx.actions.symlink(
+            output = output_jdeps,
+            target_file = toolchains.kt.empty_jdeps,
+        )
+    return struct(output_jdeps = output_jdeps)
+
+def _phase_annotation_processing(
+        annotation_processors,
+        ksp_annotation_processors,
+        ap_generated_src_jar,
+        ksp_generated_src_jar,
+        java_infos):
+    """Annotation-processing metadata phase: builds KtJvmInfo.annotation_processing.
+
+    Read-side aggregation of scalars + java_infos that mirrors the JavaInfo
+    annotation_processing shape so the Bazel Plugin IDE can locate AP-generated
+    sources. Returns a struct wrapping either the metadata struct or None. No
+    shared-list reads: all inputs are explicit args.
+
+    Returns:
+        struct(annotation_processing = struct | None)
+    """
+    annotation_processing = None
+    if annotation_processors or ksp_annotation_processors:
+        is_ksp = (ksp_annotation_processors != None)
+        processor = ksp_annotation_processors if is_ksp else annotation_processors
+        gen_jar = ksp_generated_src_jar if is_ksp else ap_generated_src_jar
+        outputs_list = [java_info.outputs for java_info in java_infos]
+        annotation_processing = _create_annotation_processing(
+            annotation_processors = processor,
+            ap_class_jar = [jars.class_jar for outputs in outputs_list for jars in outputs.jars][0],
+            ap_source_jar = gen_jar,
+        )
+    return struct(annotation_processing = annotation_processing)
+
 def _run_kt_java_builder_actions(
         ctx,
         rule_kind,
@@ -1368,49 +1455,33 @@ def _run_kt_java_builder_actions(
         java_infos.append(java_phase.java_info)
     ap_generated_src_jar = java_phase.ap_generated_src_jar
 
-    # Merge ABI jars into final compile jar.
-    _fold_jars_action(
+    # ABI fold phase: fold the per-pass ABI jars into the final compile jar.
+    _phase_abi(
         ctx,
         rule_kind = rule_kind,
         toolchains = toolchains,
-        output_jar = compile_jar,
-        action_type = "Abi",
-        input_jars = compile_jars,
+        compile_jars = compile_jars,
+        compile_jar = compile_jar,
     )
 
+    # Jdeps aggregation phase: the FINAL stage, merging every per-pass jdeps.
     if toolchains.kt.jvm_emit_jdeps:
-        jdeps = []
-        for java_info in java_infos:
-            if java_info.outputs.jdeps:
-                jdeps.append(java_info.outputs.jdeps)
-
-        if jdeps:
-            _run_merge_jdeps_action(
-                ctx = ctx,
-                toolchains = toolchains,
-                jdeps = jdeps,
-                deps = compile_deps.deps,
-                associate_jars = compile_deps.associate_jars,
-                outputs = {"output": output_jdeps},
-                classpath_jars = compile_deps.compile_jars,
-            )
-        else:
-            ctx.actions.symlink(
-                output = output_jdeps,
-                target_file = toolchains.kt.empty_jdeps,
-            )
-
-    annotation_processing = None
-    if annotation_processors or ksp_annotation_processors:
-        is_ksp = (ksp_annotation_processors != None)
-        processor = ksp_annotation_processors if is_ksp else annotation_processors
-        gen_jar = ksp_generated_src_jar if is_ksp else ap_generated_src_jar
-        outputs_list = [java_info.outputs for java_info in java_infos]
-        annotation_processing = _create_annotation_processing(
-            annotation_processors = processor,
-            ap_class_jar = [jars.class_jar for outputs in outputs_list for jars in outputs.jars][0],
-            ap_source_jar = gen_jar,
+        _phase_jdeps(
+            ctx,
+            toolchains = toolchains,
+            java_infos = java_infos,
+            compile_deps = compile_deps,
+            output_jdeps = output_jdeps,
         )
+
+    # Annotation-processing metadata phase.
+    annotation_processing = _phase_annotation_processing(
+        annotation_processors = annotation_processors,
+        ksp_annotation_processors = ksp_annotation_processors,
+        ap_generated_src_jar = ap_generated_src_jar,
+        ksp_generated_src_jar = ksp_generated_src_jar,
+        java_infos = java_infos,
+    ).annotation_processing
 
     return struct(
         output_jars = output_jars,
