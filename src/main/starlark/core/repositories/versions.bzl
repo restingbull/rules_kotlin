@@ -28,6 +28,85 @@ def _use_repository(rule, name, version, **kwargs):
 # entry keeps its own per-artifact sha256.
 _KOTLIN_CURRENT_RELEASE = "2.4.20"
 
+# The rules_kotlin release tag the worker/plugin jars are fetched from. The placeholder is inert in
+# dev builds (these records are only ever .format()-ed in the release path); release_prep.sh stamps
+# it to the release tag (GITHUB_REF_NAME with the leading "v" stripped) during release packaging.
+_RK_RELEASE_VERSION = "0.0.0-UNSTAMPED"
+
+# One http_jar-backed record per worker/plugin jar published as a GitHub release asset. Each omits
+# strip_prefix_template (http_jar rejects strip_prefix, and versions._use_repository only sets
+# strip_prefix when the record HAS that field). The sha256 placeholders are unique per-jar tokens
+# release_prep.sh seds to the real checksums during release packaging.
+_RELEASE_KOTLIN_WORKER_JAR = version(
+    version = _RK_RELEASE_VERSION,
+    url_templates = [
+        "https://github.com/bazel-contrib/rules_kotlin/releases/download/v{version}/kotlin_worker.jar",
+    ],
+    sha256 = "PLACEHOLDER_SHA256_kotlin_worker",
+)
+_RELEASE_JDEPS_MERGER_WORKER_JAR = version(
+    version = _RK_RELEASE_VERSION,
+    url_templates = [
+        "https://github.com/bazel-contrib/rules_kotlin/releases/download/v{version}/jdeps_merger_worker.jar",
+    ],
+    sha256 = "PLACEHOLDER_SHA256_jdeps_merger_worker",
+)
+_RELEASE_KSP2_WORKER_JAR = version(
+    version = _RK_RELEASE_VERSION,
+    url_templates = [
+        "https://github.com/bazel-contrib/rules_kotlin/releases/download/v{version}/ksp2_worker.jar",
+    ],
+    sha256 = "PLACEHOLDER_SHA256_ksp2_worker",
+)
+_RELEASE_KSP2_INVOKER_JAR = version(
+    version = _RK_RELEASE_VERSION,
+    url_templates = [
+        "https://github.com/bazel-contrib/rules_kotlin/releases/download/v{version}/ksp2_invoker.jar",
+    ],
+    sha256 = "PLACEHOLDER_SHA256_ksp2_invoker",
+)
+_RELEASE_SKIP_CODE_GEN_JAR = version(
+    version = _RK_RELEASE_VERSION,
+    url_templates = [
+        "https://github.com/bazel-contrib/rules_kotlin/releases/download/v{version}/skip-code-gen.jar",
+    ],
+    sha256 = "PLACEHOLDER_SHA256_skip_code_gen",
+)
+_RELEASE_JDEPS_GEN_JAR = version(
+    version = _RK_RELEASE_VERSION,
+    url_templates = [
+        "https://github.com/bazel-contrib/rules_kotlin/releases/download/v{version}/jdeps-gen.jar",
+    ],
+    sha256 = "PLACEHOLDER_SHA256_jdeps_gen",
+)
+_RELEASE_SKIP_CODE_GEN_EMBEDDABLE_JAR = version(
+    version = _RK_RELEASE_VERSION,
+    url_templates = [
+        "https://github.com/bazel-contrib/rules_kotlin/releases/download/v{version}/skip-code-gen-embeddable.jar",
+    ],
+    sha256 = "PLACEHOLDER_SHA256_skip_code_gen_embeddable",
+)
+_RELEASE_JDEPS_GEN_EMBEDDABLE_JAR = version(
+    version = _RK_RELEASE_VERSION,
+    url_templates = [
+        "https://github.com/bazel-contrib/rules_kotlin/releases/download/v{version}/jdeps-gen-embeddable.jar",
+    ],
+    sha256 = "PLACEHOLDER_SHA256_jdeps_gen_embeddable",
+)
+
+# (repo_name, version_record) pairs the released bzlmod extension turns into sha256-pinned http_jar
+# repositories, one per worker/plugin jar. Consumed by bzlmod_setup.release.bzl.
+_RELEASE_WORKER_JARS = [
+    ("rules_kotlin_worker_jar", _RELEASE_KOTLIN_WORKER_JAR),
+    ("rules_kotlin_jdeps_merger_worker_jar", _RELEASE_JDEPS_MERGER_WORKER_JAR),
+    ("rules_kotlin_ksp2_worker_jar", _RELEASE_KSP2_WORKER_JAR),
+    ("rules_kotlin_ksp2_invoker_jar", _RELEASE_KSP2_INVOKER_JAR),
+    ("rules_kotlin_skip_code_gen_jar", _RELEASE_SKIP_CODE_GEN_JAR),
+    ("rules_kotlin_jdeps_gen_jar", _RELEASE_JDEPS_GEN_JAR),
+    ("rules_kotlin_skip_code_gen_embeddable_jar", _RELEASE_SKIP_CODE_GEN_EMBEDDABLE_JAR),
+    ("rules_kotlin_jdeps_gen_embeddable_jar", _RELEASE_JDEPS_GEN_EMBEDDABLE_JAR),
+]
+
 versions = struct(
     # IMPORTANT! rules_kotlin does not use the bazel_skylib unittest in production
     # This means the bazel_skylib_workspace call is skipped, as it only registers the unittest
@@ -177,5 +256,6 @@ versions = struct(
         ],
         sha256 = "5ca175b38df331fd64155b35cd8cae1251fa9ee369709b36d42e0a288ccce3fd",
     ),
+    RELEASE_WORKER_JARS = _RELEASE_WORKER_JARS,
     use_repository = _use_repository,
 )

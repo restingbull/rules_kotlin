@@ -33,6 +33,14 @@ use_repo(
     "kotlinx_serialization_core_jvm",
     "kotlinx_serialization_json",
     "kotlinx_serialization_json_jvm",
+    "rules_kotlin_jdeps_gen_embeddable_jar",
+    "rules_kotlin_jdeps_gen_jar",
+    "rules_kotlin_jdeps_merger_worker_jar",
+    "rules_kotlin_ksp2_invoker_jar",
+    "rules_kotlin_ksp2_worker_jar",
+    "rules_kotlin_skip_code_gen_embeddable_jar",
+    "rules_kotlin_skip_code_gen_jar",
+    "rules_kotlin_worker_jar",
 )
 
 register_toolchains("//kotlin/internal:default_toolchain")
