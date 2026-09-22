@@ -87,10 +87,15 @@ kt_jvm_binary(
 
 # --- kt_jvm_junit_test x {plain, kapt, ksp} -------------------------------
 # Built (not run) by the gate; test_class need not carry @Test methods to compile.
+# Tagged "manual" so the //src/... presubmit wildcard skips RUNNING them (the
+# shared Lib.kt has no @Test methods, so JUnit would fail "No runnable methods").
+# They still compile under `bazel build //src/...` and by explicit label, which is
+# all the aquery gate needs.
 
 kt_jvm_test(
     name = "kt_jvm_junit_test_plain",
     srcs = ["Lib.kt"],
+    tags = ["manual"],
     test_class = "fixtures.Lib",
     deps = ["@kotlin_rules_maven_test//:junit_junit"],
 )
@@ -99,6 +104,7 @@ kt_jvm_test(
     name = "kt_jvm_junit_test_kapt",
     srcs = ["Lib.kt"],
     plugins = [":autovalue_plugin"],
+    tags = ["manual"],
     test_class = "fixtures.Lib",
     deps = ["@kotlin_rules_maven_test//:junit_junit"],
 )
@@ -107,6 +113,7 @@ kt_jvm_test(
     name = "kt_jvm_junit_test_ksp",
     srcs = ["Lib.kt"],
     plugins = [":moshi_plugin"],
+    tags = ["manual"],
     test_class = "fixtures.Lib",
     deps = ["@kotlin_rules_maven_test//:junit_junit"],
 )
