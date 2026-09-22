@@ -35,7 +35,9 @@ for label in "${!JARS[@]}"; do
   out=$(bazel --bazelrc=.github/workflows/ci.bazelrc --bazelrc=.bazelrc cquery --output=files "$label")
   cp "$out" "$asset"
   sha=$(shasum -a 256 "$asset" | awk '{print $1}')
-  sed -i.bak "s|$token|$sha|g" "$VERSIONS_BZL"
+  # Anchor the match on the closing quote so a shorter token (e.g. ..._skip_code_gen) cannot match
+  # inside a longer one (..._skip_code_gen_embeddable); associative-array iteration order is unspecified.
+  sed -i.bak "s|${token}\"|${sha}\"|g" "$VERSIONS_BZL"
 done
 
 # 3. stamp the release version placeholder (jar {version}) + keep the MODULE version in lockstep.
@@ -43,6 +45,14 @@ done
 sed -i.bak "s|0.0.0-UNSTAMPED|$VERSION|g" "$VERSIONS_BZL"
 sed -i.bak "/^module(/,/^)/ s|version = \"[^\"]*\"|version = \"$VERSION\"|" MODULE.release.bazel
 rm -f "$VERSIONS_BZL.bak" MODULE.release.bazel.bak
+
+# Fail loudly if any placeholder survived stamping: sed exits 0 on zero matches, so a token/name drift
+# would otherwise silently ship literal placeholders (bogus sha256 / unstamped version) to consumers.
+if grep -qE 'PLACEHOLDER_SHA256_|0\.0\.0-UNSTAMPED' "$VERSIONS_BZL"; then
+  echo "ERROR: unstamped placeholder(s) remain in $VERSIONS_BZL after release stamping:" >&2
+  grep -nE 'PLACEHOLDER_SHA256_|0\.0\.0-UNSTAMPED' "$VERSIONS_BZL" >&2
+  exit 1
+fi
 
 bazel --bazelrc=.github/workflows/ci.bazelrc --bazelrc=.bazelrc build //:rules_kotlin_release
 cp bazel-bin/rules_kotlin_release.tgz $ARCHIVE
