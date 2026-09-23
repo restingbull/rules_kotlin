@@ -2,6 +2,7 @@ load("@rules_java//java:defs.bzl", "java_plugin")
 load("//kotlin:core.bzl", "kt_ksp_plugin")
 load(":phase_aggregation_test.bzl", phase_aggregation_test_suite = "test_suite")
 load(":phase_compile_test.bzl", phase_compile_test_suite = "test_suite")
+load(":phase_composition_test.bzl", phase_composition_test_suite = "test_suite")
 load(":phase_preprocessors_test.bzl", phase_preprocessors_test_suite = "test_suite")
 load(":rule_tests.bzl", "test_suite")
 
@@ -39,4 +40,8 @@ phase_compile_test_suite(
 
 phase_aggregation_test_suite(
     name = "phase_aggregation_tests",
+)
+
+phase_composition_test_suite(
+    name = "phase_composition_tests",
 )
