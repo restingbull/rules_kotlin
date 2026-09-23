@@ -866,13 +866,11 @@ def _kt_jvm_produce_output_jar_actions(
     if toolchains.kt.jvm_emit_jdeps:
         output_jdeps = ctx.actions.declare_file(ctx.label.name + ".jdeps")
 
-    outputs_struct = _run_kt_java_builder_actions(
+    engine = _run_kt_java_builder_actions(
         ctx = ctx,
         rule_kind = rule_kind,
         toolchains = toolchains,
         srcs = srcs,
-        generated_kapt_src_jars = [],
-        generated_ksp_src_jars = [],
         compile_deps = compile_deps,
         deps_artifacts = deps_artifacts,
         annotation_processors = annotation_processors,
@@ -884,14 +882,17 @@ def _kt_jvm_produce_output_jar_actions(
         compile_jar = compile_jar,
         output_jdeps = output_jdeps,
     )
-    output_jars = outputs_struct.output_jars
-    generated_src_jars = outputs_struct.generated_src_jars
-    annotation_processing = outputs_struct.annotation_processing
+    generated_src_jars = engine.generated_src_jars
+    annotation_processing = engine.annotation_processing
 
-    # If this rule has any resources declared setup a singlejar action to turn them into a jar.
+    # Compose the resource jars into a NEW list via `+`; never mutate the
+    # engine-owned output_jars. The intermediate resource jar (if any) then the
+    # explicit resource_jars follow the engine outputs into the runtime fold.
+    resource_jars = []
     if len(ctx.files.resources) + len(extra_resources) > 0:
-        output_jars.append(_build_resourcejar_action(ctx, toolchains, extra_resources))
-    output_jars.extend(ctx.files.resource_jars)
+        resource_jars = resource_jars + [_build_resourcejar_action(ctx, toolchains, extra_resources)]
+    resource_jars = resource_jars + ctx.files.resource_jars
+    output_jars = engine.output_jars + resource_jars
 
     # Merge outputs into final runtime jar.
     output_jar = outputs.jar
@@ -1367,8 +1368,6 @@ def _run_kt_java_builder_actions(
         rule_kind,
         toolchains,
         srcs,
-        generated_kapt_src_jars,
-        generated_ksp_src_jars,
         compile_deps,
         deps_artifacts,
         annotation_processors,
@@ -1379,15 +1378,20 @@ def _run_kt_java_builder_actions(
         plugins,
         compile_jar,
         output_jdeps):
-    """Runs the necessary KotlinBuilder and JavaBuilder actions to compile a jar
+    """Runs the necessary KotlinBuilder and JavaBuilder actions to compile a jar.
+
+    The orchestrator is pure struct composition: it runs each phase and then
+    assembles every collection by `+` of the phase structs' fields. It keeps
+    ZERO by-reference accumulators -- no phase result is appended or extended
+    into a shared list across stages.
 
     Returns:
-        A struct containing the a list of output_jars and a struct annotation_processing jars
+        A struct of the composed output_jars, the generated source jars, the
+        folded compile_jar, the aggregated output_jdeps, and the
+        annotation_processing metadata struct (or None).
     """
-    compile_jars = []
-    output_jars = []
 
-    # Run KAPT pre-pass phase and fold its immutable result into the shared lists.
+    # KAPT + KSP pre-pass phases: each returns an immutable struct.
     kapt_phase = _phase_kapt(
         ctx,
         rule_kind = rule_kind,
@@ -1399,10 +1403,6 @@ def _run_kt_java_builder_actions(
         transitive_runtime_jars = transitive_runtime_jars,
         plugins = plugins,
     )
-    generated_kapt_src_jars.extend(kapt_phase.generated_src_jars)
-    output_jars.extend(kapt_phase.output_class_jars)
-
-    # Run KSP pre-pass phase and fold its immutable result into the shared lists.
     ksp_phase = _phase_ksp(
         ctx,
         toolchains = toolchains,
@@ -1412,15 +1412,12 @@ def _run_kt_java_builder_actions(
         transitive_runtime_jars = ksp_transitive_runtime_jars,
         ksp_options = ksp_options,
     )
-    generated_ksp_src_jars.extend(ksp_phase.generated_src_jars)
-    output_jars.extend(ksp_phase.output_class_jars)
-    ksp_generated_class_jar = ksp_phase.ksp_generated_class_jar
-    ksp_generated_src_jar = ksp_phase.ksp_generated_src_jar
 
-    java_infos = []
-    ap_generated_src_jar = None
+    # Generated source jars compose by `+`; the Kotlin pass reads their union.
+    generated_kapt_src_jars = kapt_phase.generated_src_jars
+    generated_ksp_src_jars = ksp_phase.generated_src_jars
 
-    # Run the Kotlin compile phase and fold its immutable result into the shared lists.
+    # Kotlin compile phase.
     kotlin_phase = _phase_kotlin(
         ctx,
         rule_kind = rule_kind,
@@ -1433,12 +1430,9 @@ def _run_kt_java_builder_actions(
         transitive_runtime_jars = transitive_runtime_jars,
         plugins = plugins,
     )
-    compile_jars.extend(kotlin_phase.compile_jars)
-    output_jars.extend(kotlin_phase.output_jars)
-    if kotlin_phase.java_info:
-        java_infos.append(kotlin_phase.java_info)
 
-    # Run the Java compile phase and fold its immutable result into the shared lists.
+    # Java compile phase. The neverlink stubs it compiles against are the `+`
+    # composition of the KAPT stubs and the Kotlin full-output stubs.
     java_phase = _phase_java(
         ctx,
         toolchains = toolchains,
@@ -1449,11 +1443,20 @@ def _run_kt_java_builder_actions(
         stubs_java_infos = kapt_phase.stubs_java_infos + kotlin_phase.extra_stubs_java_infos,
         plugin_java_infos = [p[JavaInfo] for p in ctx.attr.plugins if JavaInfo in p],
     )
-    compile_jars.extend(java_phase.compile_jars)
-    output_jars.extend(java_phase.output_jars)
-    if java_phase.java_info:
-        java_infos.append(java_phase.java_info)
-    ap_generated_src_jar = java_phase.ap_generated_src_jar
+
+    # Every collection is the `+` composition of the phase struct fields --
+    # never a by-reference append/extend into a shared list across stages.
+    compile_jars = kotlin_phase.compile_jars + java_phase.compile_jars
+    output_jars = (
+        kapt_phase.output_class_jars +
+        ksp_phase.output_class_jars +
+        kotlin_phase.output_jars +
+        java_phase.output_jars
+    )
+    java_infos = (
+        ([kotlin_phase.java_info] if kotlin_phase.java_info else []) +
+        ([java_phase.java_info] if java_phase.java_info else [])
+    )
 
     # ABI fold phase: fold the per-pass ABI jars into the final compile jar.
     _phase_abi(
@@ -1478,14 +1481,16 @@ def _run_kt_java_builder_actions(
     annotation_processing = _phase_annotation_processing(
         annotation_processors = annotation_processors,
         ksp_annotation_processors = ksp_annotation_processors,
-        ap_generated_src_jar = ap_generated_src_jar,
-        ksp_generated_src_jar = ksp_generated_src_jar,
+        ap_generated_src_jar = java_phase.ap_generated_src_jar,
+        ksp_generated_src_jar = ksp_phase.ksp_generated_src_jar,
         java_infos = java_infos,
     ).annotation_processing
 
     return struct(
         output_jars = output_jars,
         generated_src_jars = generated_kapt_src_jars + generated_ksp_src_jars,
+        compile_jar = compile_jar,
+        output_jdeps = output_jdeps,
         annotation_processing = annotation_processing,
     )
 
