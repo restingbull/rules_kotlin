@@ -32,6 +32,7 @@ load(
     "version",
     _versions = "versions",
 )
+load(":version.jar.bzl", "JAR_VERSIONS")
 
 versions = _versions
 btapi_impl_version = _btapi_impl_version
@@ -77,42 +78,42 @@ def kotlin_repositories(
     versions.use_repository(
         http_file,
         name = "com_github_pinterest_ktlint",
-        version = versions.PINTEREST_KTLINT,
+        version = JAR_VERSIONS.PINTEREST_KTLINT,
         downloaded_file_path = "ktlint.jar",
     )
 
     versions.use_repository(
         http_file,
         name = "kotlinx_serialization_core_jvm",
-        version = versions.KOTLINX_SERIALIZATION_CORE_JVM,
+        version = JAR_VERSIONS.KOTLINX_SERIALIZATION_CORE_JVM,
         downloaded_file_path = "kotlinx-serialization-core-jvm.jar",
     )
 
     versions.use_repository(
         http_file,
         name = "kotlinx_serialization_json",
-        version = versions.KOTLINX_SERIALIZATION_JSON,
+        version = JAR_VERSIONS.KOTLINX_SERIALIZATION_JSON,
         downloaded_file_path = "kotlinx-serialization-json.jar",
     )
 
     versions.use_repository(
         http_file,
         name = "kotlinx_serialization_json_jvm",
-        version = versions.KOTLINX_SERIALIZATION_JSON_JVM,
+        version = JAR_VERSIONS.KOTLINX_SERIALIZATION_JSON_JVM,
         downloaded_file_path = "kotlinx-serialization-json-jvm.jar",
     )
 
     versions.use_repository(
         http_file,
         name = "kotlinx_coroutines_core_jvm",
-        version = versions.KOTLINX_COROUTINES_CORE_JVM,
+        version = JAR_VERSIONS.KOTLINX_COROUTINES_CORE_JVM,
         downloaded_file_path = "kotlinx-coroutines-core-jvm.jar",
     )
 
     versions.use_repository(
         http_file,
         name = "kotlin_build_tools_api",
-        version = versions.KOTLIN_BUILD_TOOLS_API,
+        version = JAR_VERSIONS.KOTLIN_BUILD_TOOLS_API,
         downloaded_file_path = "kotlin-build-tools-api.jar",
     )
 
