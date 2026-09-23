@@ -1,0 +1,14 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(
+    ["release_jars.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "release_jars",
+    srcs = ["release_jars.bzl"],
+    visibility = ["//visibility:public"],
+)
