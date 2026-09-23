@@ -1,0 +1,3 @@
+load(":runner_test.bzl", "runner_test_suite")
+
+runner_test_suite(name = "runner_tests")
