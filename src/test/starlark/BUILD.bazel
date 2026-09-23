@@ -1,7 +1,9 @@
+load("//src/main/starlark/release:release_jars.bzl", "release_jars")
 load("//src/test/starlark/internal/jvm:resource_strip_prefix_test.bzl", "strip_resource_prefix_test_suite")
 load("//src/test/starlark/internal/lint:ktlint_fix_runfiles_test.bzl", "ktlint_fix_runfiles_test_suite")
 load(":btapi_impl_release_test.bzl", "btapi_impl_release_test_suite")
 load(":convert_test.bzl", "convert_test_suite")
+load(":release_jars_test.bzl", "release_jars_test_suite")
 
 convert_test_suite(name = "convert_tests")
 
@@ -11,12 +13,30 @@ strip_resource_prefix_test_suite(name = "resource_strip_prefix_tests")
 
 ktlint_fix_runfiles_test_suite(name = "ktlint_fix_runfiles_tests")
 
+# Fixture target-under-test for the release_jars analysis tests.
+release_jars(
+    name = "release_jars_fixture",
+    testonly = True,
+    jars = {
+        "dummy_a.jar": "kotlin_a",
+        "dummy_b.jar": "kotlin_b",
+    },
+    tags = ["manual"],
+    urls = {
+        "kotlin_a": "https://example.com/{name}-{version}.jar",
+        "kotlin_b": "https://example.com/{name}-{version}.jar",
+    },
+)
+
+release_jars_test_suite(name = "release_jars_tests")
+
 test_suite(
     name = "starlark_tests",
     tests = [
         ":btapi_impl_release_tests",
         ":convert_tests",
         ":ktlint_fix_runfiles_tests",
+        ":release_jars_tests",
         ":resource_strip_prefix_tests",
         "//src/test/starlark/ksp:ksp_tests",
     ],
