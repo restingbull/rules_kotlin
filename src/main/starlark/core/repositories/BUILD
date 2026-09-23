@@ -30,13 +30,29 @@ release_jars(
         "@kotlinx_serialization_json//file": "KOTLINX_SERIALIZATION_JSON",
         "@kotlinx_serialization_json_jvm//file": "KOTLINX_SERIALIZATION_JSON_JVM",
     },
+    # Each URL is formatted at load time with the jar's OWN pinned version, so the
+    # worker only fills {name} (if present) and never substitutes the global
+    # BUILD_TIMESTAMP into {version}. Otherwise all 6 download URLs would point at the
+    # build timestamp instead of e.g. ktlint 1.8.0.
     urls = {
-        "KOTLINX_COROUTINES_CORE_JVM": JAR_VERSIONS.KOTLINX_COROUTINES_CORE_JVM.url_templates[0],
-        "KOTLINX_SERIALIZATION_CORE_JVM": JAR_VERSIONS.KOTLINX_SERIALIZATION_CORE_JVM.url_templates[0],
-        "KOTLINX_SERIALIZATION_JSON": JAR_VERSIONS.KOTLINX_SERIALIZATION_JSON.url_templates[0],
-        "KOTLINX_SERIALIZATION_JSON_JVM": JAR_VERSIONS.KOTLINX_SERIALIZATION_JSON_JVM.url_templates[0],
-        "KOTLIN_BUILD_TOOLS_API": JAR_VERSIONS.KOTLIN_BUILD_TOOLS_API.url_templates[0],
-        "PINTEREST_KTLINT": JAR_VERSIONS.PINTEREST_KTLINT.url_templates[0],
+        "KOTLINX_COROUTINES_CORE_JVM": JAR_VERSIONS.KOTLINX_COROUTINES_CORE_JVM.url_templates[0].format(
+            version = JAR_VERSIONS.KOTLINX_COROUTINES_CORE_JVM.version,
+        ),
+        "KOTLINX_SERIALIZATION_CORE_JVM": JAR_VERSIONS.KOTLINX_SERIALIZATION_CORE_JVM.url_templates[0].format(
+            version = JAR_VERSIONS.KOTLINX_SERIALIZATION_CORE_JVM.version,
+        ),
+        "KOTLINX_SERIALIZATION_JSON": JAR_VERSIONS.KOTLINX_SERIALIZATION_JSON.url_templates[0].format(
+            version = JAR_VERSIONS.KOTLINX_SERIALIZATION_JSON.version,
+        ),
+        "KOTLINX_SERIALIZATION_JSON_JVM": JAR_VERSIONS.KOTLINX_SERIALIZATION_JSON_JVM.url_templates[0].format(
+            version = JAR_VERSIONS.KOTLINX_SERIALIZATION_JSON_JVM.version,
+        ),
+        "KOTLIN_BUILD_TOOLS_API": JAR_VERSIONS.KOTLIN_BUILD_TOOLS_API.url_templates[0].format(
+            version = JAR_VERSIONS.KOTLIN_BUILD_TOOLS_API.version,
+        ),
+        "PINTEREST_KTLINT": JAR_VERSIONS.PINTEREST_KTLINT.url_templates[0].format(
+            version = JAR_VERSIONS.PINTEREST_KTLINT.version,
+        ),
     },
     # volatile-status.txt (--stamp) exposes BUILD_TIMESTAMP, not VERSION.
     version_key = "BUILD_TIMESTAMP",
