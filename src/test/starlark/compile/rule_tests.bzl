@@ -1,7 +1,9 @@
 """Analysis tests for the core Kotlin compile rules."""
 
+load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("@rules_java//java/common:java_info.bzl", "JavaInfo")
 load("//kotlin:jvm.bzl", "kt_jvm_library")
+load("//kotlin/internal/jvm:impl.bzl", "base_library_pipeline")
 load("//src/main/starlark/core/compile:common.bzl", "KtJvmInfo")
 load("//src/main/starlark/core/compile:rules.bzl", "core_kt_jvm_binary", "core_kt_jvm_library")
 load("//src/main/starlark/core/compile/cli:toolchain.bzl", "COMPILE_MNEMONIC")
@@ -453,7 +455,34 @@ def test_jvm():
         test_runfiles = _test_runfiles(**library),
     )
 
+def _base_library_pipeline_on_runner_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # kt_jvm_library must assemble its providers by running the vendored pipeline
+    # runner. base_library_pipeline() is built in impl.bzl via
+    # processing_pipeline.make_processing_pipeline, which forces impl.bzl to load
+    # //src/main/starlark/core/pipeline:pipeline (runner on the load path). The
+    # base processor chain threads jvm deps -> compile -> finalize(providers).
+    pipeline = base_library_pipeline()
+    asserts.equals(
+        env,
+        ["DepsProcessor", "JvmCompileProcessor"],
+        pipeline.processors.keys(),
+    )
+    asserts.true(
+        env,
+        pipeline.finalize != None,
+        "base library pipeline must define a finalize step assembling the provider golden",
+    )
+
+    return unittest.end(env)
+
+base_library_pipeline_on_runner_test = unittest.make(_base_library_pipeline_on_runner_test_impl)
+
 def test_suite(name):
+    base_library_pipeline_on_runner_test(
+        name = "base_library_pipeline_on_runner_test",
+    )
     suite(
         name,
         **{

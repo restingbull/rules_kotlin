@@ -37,6 +37,11 @@ load(
     "get_launcher_maker_toolchain_for_action",
     "is_windows",
 )
+load(
+    "//src/main/starlark/core/pipeline:pipeline.bzl",
+    _ProviderInfo = "ProviderInfo",
+    _processing_pipeline = "processing_pipeline",
+)
 load("//src/main/starlark/core/plugin:common.bzl", "plugin_common")
 load("//third_party:jarjar.bzl", "jarjar_action")
 
@@ -348,6 +353,56 @@ def kt_jvm_import_impl(ctx):
         kt_info,
     ]
 
+def _process_deps(context):
+    """Base processor: collect the targets contributing runfiles to the library."""
+    ctx = context.ctx
+    return _ProviderInfo(
+        name = "DepsProcessor",
+        value = ctx.attr.deps + ctx.attr.exports + ctx.attr.runtime_deps + ctx.attr.data,
+        runfiles = None,
+    )
+
+def _process_compile(context):
+    """Base processor: run the (unchanged) JVM compile engine for the library."""
+    ctx = context.ctx
+    providers = _compile.kt_jvm_produce_jar_actions(ctx, "kt_jvm_library") if ctx.attr.srcs or ctx.attr.resources else _compile.export_only_providers(
+        ctx = ctx,
+        actions = ctx.actions,
+        outputs = ctx.outputs,
+        attr = ctx.attr,
+    )
+    return _ProviderInfo(
+        name = "JvmCompileProcessor",
+        value = providers,
+        runfiles = None,
+    )
+
+def _finalize_library(context):
+    """Assemble the kt_jvm_library provider golden from the accumulated results."""
+    return _make_providers(
+        context.ctx,
+        providers = context.outputs["JvmCompileProcessor"],
+        runfiles_targets = context.outputs["DepsProcessor"],
+    )
+
+def base_library_pipeline():
+    """Base kt_jvm_library processor chain run on the vendored pipeline runner.
+
+    jvm deps -> compile phases -> finalize(providers), assembled by the vendored
+    //src/main/starlark/core/pipeline runner. This is the base chain other JVM
+    rule shells extend; it never transitively loads @rules_android.
+
+    Returns:
+        The pipeline struct consumed by processing_pipeline.run.
+    """
+    return _processing_pipeline.make_processing_pipeline(
+        processors = {
+            "DepsProcessor": _process_deps,
+            "JvmCompileProcessor": _process_compile,
+        },
+        finalize = _finalize_library,
+    )
+
 def kt_jvm_library_impl(ctx):
     """Implements the kt_jvm_library rule.
 
@@ -367,15 +422,10 @@ def kt_jvm_library_impl(ctx):
             "\nTo export libraries use exports.",
             attr = "deps",
         )
-    return _make_providers(
-        ctx,
-        providers = _compile.kt_jvm_produce_jar_actions(ctx, "kt_jvm_library") if ctx.attr.srcs or ctx.attr.resources else _compile.export_only_providers(
-            ctx = ctx,
-            actions = ctx.actions,
-            outputs = ctx.outputs,
-            attr = ctx.attr,
-        ),
-        runfiles_targets = ctx.attr.deps + ctx.attr.exports + ctx.attr.runtime_deps + ctx.attr.data,
+    return _processing_pipeline.run(
+        ctx = ctx,
+        java_package = None,
+        pipeline = base_library_pipeline(),
     )
 
 def kt_jvm_binary_impl(ctx):
