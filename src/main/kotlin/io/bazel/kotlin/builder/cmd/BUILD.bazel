@@ -97,6 +97,8 @@ kt_bootstrap_library(
 
 kt_bootstrap_binary(
     name = "release_jars",
+    data = _KOTLIN_STDLIBS,
+    final_runtime_deps = _KOTLIN_STDLIBS,
     main_class = "io.bazel.kotlin.builder.cmd.ReleaseJars",
     shade_rules = "//src/main/kotlin:shade.jarjar",
     visibility = ["//visibility:public"],
