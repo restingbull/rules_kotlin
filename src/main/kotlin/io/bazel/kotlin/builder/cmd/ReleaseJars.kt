@@ -30,6 +30,7 @@ import kotlin.system.exitProcess
  * side-effect-free helpers are unit-tested directly.
  */
 object ReleaseJars {
+  /** A resolved release jar: its download [url] and lowercase-hex [sha256] digest. */
   data class JarEntry(
     val url: String,
     val sha256: String,
@@ -95,11 +96,13 @@ object ReleaseJars {
     return sb.toString()
   }
 
+  /** CLI entry point for the `release_jars` rule; exits with [run]'s status code. */
   @JvmStatic
   fun main(args: Array<String>) {
     exitProcess(run(args))
   }
 
+  /** Parses CLI flags, hashes and copies each jar, then writes the rendered jar_version.bzl. */
   private fun run(args: Array<String>): Int {
     var versionFile: String? = null
     var versionKey: String? = null
@@ -183,6 +186,7 @@ object ReleaseJars {
     return 0
   }
 
+  /** Copies [source] to [target], overwriting any existing file. */
   private fun copyTo(
     source: Path,
     target: Path,
@@ -190,6 +194,7 @@ object ReleaseJars {
     Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING)
   }
 
+  /** Splits a `name=value` CLI argument into its (name, value) pair; requires a non-empty name. */
   private fun splitKeyValue(arg: String): Pair<String, String> {
     val idx = arg.indexOf('=')
     require(idx > 0) { "expected name=value but got '$arg'" }
