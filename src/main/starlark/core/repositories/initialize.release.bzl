@@ -27,12 +27,12 @@ load(
 )
 load(":compiler.bzl", "kotlin_compiler_repository")
 load(":ksp.bzl", "ksp_compiler_plugin_repository")
+load(":version.jar.bzl", "JAR_VERSIONS")
 load(
     ":versions.bzl",
     "version",
     _versions = "versions",
 )
-load(":version.jar.bzl", "JAR_VERSIONS")
 
 versions = _versions
 btapi_impl_version = _btapi_impl_version
