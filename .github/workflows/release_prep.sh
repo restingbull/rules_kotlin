@@ -8,9 +8,20 @@ TAG=${GITHUB_REF_NAME}
 # The prefix is chosen to match what GitHub generates for source archives
 PREFIX="rules_kotlin-${TAG:1}"
 ARCHIVE="rules_kotlin-$TAG.tar.gz"
-bazel --bazelrc=.github/workflows/ci.bazelrc --bazelrc=.bazelrc build //:rules_kotlin_release
+bazel --bazelrc=.github/workflows/ci.bazelrc --bazelrc=.bazelrc build --stamp //:rules_kotlin_release
 cp bazel-bin/rules_kotlin_release.tgz $ARCHIVE
 SHA=$(shasum -a 256 $ARCHIVE | awk '{print $1}')
+
+# Build the stamped per-jar release blobs and stage them for upload.
+# The `release` output group of jar_version_generated is a TreeArtifact directory
+# of version-stamped <name>-<version>.jar files. --stamp bakes the release version
+# into each filename; we copy the directory contents into ./blobs/ so the GH release
+# action can upload them by glob (blobs/*.jar) and newly-added jars ship automatically.
+JAR_VERSION_TARGET="//src/main/starlark/core/repositories:jar_version_generated"
+bazel --bazelrc=.github/workflows/ci.bazelrc --bazelrc=.bazelrc build --stamp --output_groups=release "$JAR_VERSION_TARGET"
+rm -rf blobs
+mkdir -p blobs
+cp -R bazel-bin/src/main/starlark/core/repositories/jar_version_generated/release_blobs/. blobs/
 
 # Write the release notes to release_notes.txt
 cat > release_notes.txt << EOF
