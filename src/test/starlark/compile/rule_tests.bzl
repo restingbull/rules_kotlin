@@ -3,7 +3,7 @@
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("@rules_java//java/common:java_info.bzl", "JavaInfo")
 load("//kotlin:jvm.bzl", "kt_jvm_library")
-load("//kotlin/internal/jvm:impl.bzl", "base_library_pipeline")
+load("//kotlin/internal/jvm:impl.bzl", "base_binary_pipeline", "base_library_pipeline")
 load("//src/main/starlark/core/compile:common.bzl", "KtJvmInfo")
 load("//src/main/starlark/core/compile:rules.bzl", "core_kt_jvm_binary", "core_kt_jvm_library")
 load("//src/main/starlark/core/compile/cli:toolchain.bzl", "COMPILE_MNEMONIC")
@@ -479,9 +479,36 @@ def _base_library_pipeline_on_runner_test_impl(ctx):
 
 base_library_pipeline_on_runner_test = unittest.make(_base_library_pipeline_on_runner_test_impl)
 
+def _base_binary_pipeline_on_runner_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # kt_jvm_binary must assemble its providers by running the vendored pipeline
+    # runner too: it EXTENDS the base library chain (jvm deps -> compile) by
+    # appending a launcher phase, so the binary is not built by reusing
+    # kt_jvm_library_impl wholesale. The launcher phase encapsulates the
+    # exe-vs-shell choice and emits DefaultInfo + RunEnvironmentInfo via finalize.
+    pipeline = base_binary_pipeline()
+    asserts.equals(
+        env,
+        ["DepsProcessor", "JvmCompileProcessor", "LauncherProcessor"],
+        pipeline.processors.keys(),
+    )
+    asserts.true(
+        env,
+        pipeline.finalize != None,
+        "base binary pipeline must define a finalize step emitting DefaultInfo + RunEnvironmentInfo",
+    )
+
+    return unittest.end(env)
+
+base_binary_pipeline_on_runner_test = unittest.make(_base_binary_pipeline_on_runner_test_impl)
+
 def test_suite(name):
     base_library_pipeline_on_runner_test(
         name = "base_library_pipeline_on_runner_test",
+    )
+    base_binary_pipeline_on_runner_test(
+        name = "base_binary_pipeline_on_runner_test",
     )
     suite(
         name,
