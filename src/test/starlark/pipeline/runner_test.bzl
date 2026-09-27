@@ -132,6 +132,7 @@ def _runfiles_test_impl(ctx):
 runfiles_merge_test = unittest.make(_runfiles_test_impl)
 
 def runner_test_suite(name):
+    """Wire the processing-pipeline runner's order/transform/accumulate/runfiles tests."""
     unittest.suite(
         name,
         order_test,
