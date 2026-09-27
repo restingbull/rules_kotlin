@@ -549,26 +549,22 @@ _SPLIT_STRINGS = [
     "test/",
 ]
 
-def kt_jvm_junit_test_impl(ctx):
-    """Implements the kt_jvm_test rule for JUnit tests.
+def _process_test_compile(context):
+    """Test compile processor: run the JVM compile engine with the kt_jvm_test kind.
 
-    Args:
-        ctx: the rule context providing the test sources, deps, and test runner.
-
-    Returns:
-        The list of providers producing the runnable JUnit test.
+    Passes rule_kind "kt_jvm_test" so the compile action manifest stays byte-identical
+    for aquery; like the binary processor it never takes the library export-only path.
     """
-    providers = _compile.kt_jvm_produce_jar_actions(ctx, "kt_jvm_test")
-    runtime_jars = depset(ctx.files._bazel_test_runner, transitive = [providers.java.transitive_runtime_jars])
+    ctx = context.ctx
+    return _ProviderInfo(
+        name = "JvmCompileProcessor",
+        value = _compile.kt_jvm_produce_jar_actions(ctx, "kt_jvm_test"),
+        runfiles = None,
+    )
 
-    coverage_runfiles = []
-    if ctx.configuration.coverage_enabled:
-        jacocorunner = ctx.toolchains[_TOOLCHAIN_TYPE].jacocorunner
-        coverage_runfiles = jacocorunner.files.to_list()
-
+def _infer_test_class(ctx):
+    """Return the explicit test_class, else best-effort infer one from the srcs."""
     test_class = ctx.attr.test_class
-
-    # If no test_class, do a best-effort attempt to infer one.
     if not bool(ctx.attr.test_class):
         for file in ctx.files.srcs:
             package_relative_path = file.path.replace(ctx.label.package + "/", "")
@@ -578,6 +574,26 @@ def kt_jvm_junit_test_impl(ctx):
                     if len(elements) == 2:
                         test_class = elements[1].split(".")[0].replace("/", ".")
                         break
+    return test_class
+
+def _process_test_launcher(context):
+    """Test-launcher processor: build the coverage-instrumented launcher + runfiles.
+
+    Encapsulates the test-runner runtime jars, jacoco coverage runfiles/metadata,
+    test_class inference and the coverage jvm flags (-ea + bazel.test_suite) behind one
+    processor boundary, threading the executable + launcher runfiles to finalize. The
+    windows-exe vs unix-shell launcher choice stays folded inside _write_launcher_action.
+    """
+    ctx = context.ctx
+    providers = context.outputs["JvmCompileProcessor"]
+    runtime_jars = depset(ctx.files._bazel_test_runner, transitive = [providers.java.transitive_runtime_jars])
+
+    coverage_runfiles = []
+    if ctx.configuration.coverage_enabled:
+        jacocorunner = ctx.toolchains[_TOOLCHAIN_TYPE].jacocorunner
+        coverage_runfiles = jacocorunner.files.to_list()
+
+    test_class = _infer_test_class(ctx)
 
     jvm_flags = []
     if hasattr(ctx.fragments.java, "default_jvm_opts"):
@@ -598,17 +614,74 @@ def kt_jvm_junit_test_impl(ctx):
     # Get java runtime files from toolchain for runfiles (needed for Windows launcher)
     java_runtime = ctx.toolchains["@bazel_tools//tools/jdk:runtime_toolchain_type"].java_runtime
 
+    return _ProviderInfo(
+        name = "TestLauncherProcessor",
+        value = struct(
+            executable = launcher_result.executable,
+            transitive_files = depset(
+                order = "default",
+                transitive = [runtime_jars, depset(coverage_runfiles), depset(launcher_result.coverage_metadata), java_runtime.files],
+            ),
+        ),
+        runfiles = None,
+    )
+
+def _finalize_test(context):
+    """Assemble the kt_jvm_junit_test golden: DefaultInfo (launcher) + TestEnvironment.
+
+    DefaultInfo (with the coverage-instrumented executable + merged launcher runfiles) and
+    the +TestEnvironment provider (common test variables incl. TEST_WORKSPACE) are emitted
+    from the accumulated results; the deploy/runtime jars ride in the JavaInfo assembled by
+    the compile phase.
+    """
+    ctx = context.ctx
+    launcher = context.outputs["TestLauncherProcessor"]
     return _make_providers(
         ctx,
-        providers,
-        ctx.attr.deps + ctx.attr.runtime_deps + ctx.attr.data,
-        depset(
-            order = "default",
-            transitive = [runtime_jars, depset(coverage_runfiles), depset(launcher_result.coverage_metadata), java_runtime.files],
-        ),
-        launcher_result.executable,
+        context.outputs["JvmCompileProcessor"],
+        context.outputs["DepsProcessor"],
+        launcher.transitive_files,
+        launcher.executable,
         # adds common test variables, including TEST_WORKSPACE.
         testing.TestEnvironment(environment = _expand_env(ctx), inherited_environment = ctx.attr.env_inherit),
+    )
+
+def base_test_pipeline():
+    """Base kt_jvm_junit_test processor chain run on the vendored pipeline runner.
+
+    Extends the base library chain (jvm deps -> compile) by swapping in the test rule-kind
+    compile and appending a test-launcher phase, then finalizing with DefaultInfo +
+    TestEnvironment. The JUnit test runs on the runner -- NOT off a bespoke non-runner path
+    -- and the test-launcher phase owns the coverage launcher + test_class inference. Like
+    the base library chain it never transitively loads @rules_android.
+
+    Returns:
+        The pipeline struct consumed by processing_pipeline.run.
+    """
+    return _processing_pipeline.make_processing_pipeline(
+        processors = _processing_pipeline.append(
+            _processing_pipeline.replace(
+                base_library_pipeline().processors,
+                JvmCompileProcessor = _process_test_compile,
+            ),
+            TestLauncherProcessor = _process_test_launcher,
+        ),
+        finalize = _finalize_test,
+    )
+
+def kt_jvm_junit_test_impl(ctx):
+    """Implements the kt_jvm_test rule for JUnit tests.
+
+    Args:
+        ctx: the rule context providing the test sources, deps, and test runner.
+
+    Returns:
+        The list of providers producing the runnable JUnit test.
+    """
+    return _processing_pipeline.run(
+        ctx = ctx,
+        java_package = None,
+        pipeline = base_test_pipeline(),
     )
 
 _KtCompilerPluginClasspathInfo = provider(
