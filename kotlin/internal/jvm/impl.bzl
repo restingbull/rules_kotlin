@@ -410,8 +410,8 @@ def base_library_pipeline():
 def _process_binary_compile(context):
     """Binary compile processor: run the JVM compile engine with the kt_jvm_binary kind.
 
-    Passes rule_kind "kt_jvm_binary" so the compile action manifest stays byte-identical
-    for aquery; unlike the library processor it never takes the export-only path.
+    Passes rule_kind "kt_jvm_binary" so the compile action is behavior-preserving;
+    unlike the library processor it never takes the export-only path.
     """
     ctx = context.ctx
     return _ProviderInfo(
@@ -552,8 +552,8 @@ _SPLIT_STRINGS = [
 def _process_test_compile(context):
     """Test compile processor: run the JVM compile engine with the kt_jvm_test kind.
 
-    Passes rule_kind "kt_jvm_test" so the compile action manifest stays byte-identical
-    for aquery; like the binary processor it never takes the library export-only path.
+    Passes rule_kind "kt_jvm_test" so the compile action is behavior-preserving;
+    like the binary processor it never takes the library export-only path.
     """
     ctx = context.ctx
     return _ProviderInfo(
