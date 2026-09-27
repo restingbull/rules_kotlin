@@ -354,11 +354,15 @@ def kt_jvm_import_impl(ctx):
     ]
 
 def _process_deps(context):
-    """Base processor: collect the targets contributing runfiles to the library."""
+    """Base processor: collect the targets contributing runfiles.
+
+    Shared by the library and binary chains; kt_jvm_binary has no `exports` attr, so
+    exports are read defensively via getattr.
+    """
     ctx = context.ctx
     return _ProviderInfo(
         name = "DepsProcessor",
-        value = ctx.attr.deps + ctx.attr.exports + ctx.attr.runtime_deps + ctx.attr.data,
+        value = ctx.attr.deps + getattr(ctx.attr, "exports", []) + ctx.attr.runtime_deps + ctx.attr.data,
         runfiles = None,
     )
 
@@ -403,6 +407,97 @@ def base_library_pipeline():
         finalize = _finalize_library,
     )
 
+def _process_binary_compile(context):
+    """Binary compile processor: run the JVM compile engine with the kt_jvm_binary kind.
+
+    Passes rule_kind "kt_jvm_binary" so the compile action manifest stays byte-identical
+    for aquery; unlike the library processor it never takes the export-only path.
+    """
+    ctx = context.ctx
+    return _ProviderInfo(
+        name = "JvmCompileProcessor",
+        value = _compile.kt_jvm_produce_jar_actions(ctx, "kt_jvm_binary"),
+        runfiles = None,
+    )
+
+def _process_binary_launcher(context):
+    """Launcher processor: build the runnable launcher and collect its runfiles.
+
+    Encapsulates the windows-exe vs unix-shell launcher construction behind one
+    processor boundary (folding the former mid-impl is_windows branch into this phase)
+    and threads the executable + launcher runfiles to finalize.
+    """
+    ctx = context.ctx
+    providers = context.outputs["JvmCompileProcessor"]
+    jvm_flags = []
+    if hasattr(ctx.fragments.java, "default_jvm_opts"):
+        jvm_flags = ctx.fragments.java.default_jvm_opts
+    jvm_flags.extend(ctx.attr.jvm_flags)
+    launcher_result = _write_launcher_action(
+        ctx,
+        providers.java.transitive_runtime_jars,
+        ctx.attr.main_class,
+        jvm_flags,
+    )
+
+    # Java runtime files are needed in runfiles for the (Windows) launcher.
+    java_runtime = ctx.toolchains["@bazel_tools//tools/jdk:runtime_toolchain_type"].java_runtime
+    return _ProviderInfo(
+        name = "LauncherProcessor",
+        value = struct(
+            executable = launcher_result.executable,
+            transitive_files = depset(
+                order = "default",
+                transitive = [providers.java.transitive_runtime_jars, java_runtime.files],
+            ),
+        ),
+        runfiles = None,
+    )
+
+def _finalize_binary(context):
+    """Assemble the kt_jvm_binary golden: single DefaultInfo + RunEnvironmentInfo.
+
+    DefaultInfo is emitted directly here (single source of truth, no post-filter of a
+    reused kt_jvm_library_impl result) alongside RunEnvironmentInfo; the deploy jar rides
+    in the JavaInfo assembled by the compile phase.
+    """
+    ctx = context.ctx
+    launcher = context.outputs["LauncherProcessor"]
+    return _make_providers(
+        ctx,
+        context.outputs["JvmCompileProcessor"],
+        context.outputs["DepsProcessor"],
+        launcher.transitive_files,
+        launcher.executable,
+        RunEnvironmentInfo(
+            environment = _expand_env(ctx),
+            inherited_environment = ctx.attr.env_inherit,
+        ),
+    )
+
+def base_binary_pipeline():
+    """Base kt_jvm_binary processor chain run on the vendored pipeline runner.
+
+    Extends the base library chain (jvm deps -> compile) by replacing the compile
+    processor with the binary rule-kind variant and appending a launcher phase, then
+    finalizing with DefaultInfo + RunEnvironmentInfo. The binary runs on the runner --
+    NOT by reusing kt_jvm_library_impl wholesale -- and the launcher phase owns the
+    exe-vs-shell OS choice.
+
+    Returns:
+        The pipeline struct consumed by processing_pipeline.run.
+    """
+    return _processing_pipeline.make_processing_pipeline(
+        processors = _processing_pipeline.append(
+            _processing_pipeline.replace(
+                base_library_pipeline().processors,
+                JvmCompileProcessor = _process_binary_compile,
+            ),
+            LauncherProcessor = _process_binary_launcher,
+        ),
+        finalize = _finalize_binary,
+    )
+
 def kt_jvm_library_impl(ctx):
     """Implements the kt_jvm_library rule.
 
@@ -437,36 +532,12 @@ def kt_jvm_binary_impl(ctx):
     Returns:
         The list of providers producing the runnable binary.
     """
-    providers = _compile.kt_jvm_produce_jar_actions(ctx, "kt_jvm_binary")
-    jvm_flags = []
-    if hasattr(ctx.fragments.java, "default_jvm_opts"):
-        jvm_flags = ctx.fragments.java.default_jvm_opts
-    jvm_flags.extend(ctx.attr.jvm_flags)
-    launcher_result = _write_launcher_action(
-        ctx,
-        providers.java.transitive_runtime_jars,
-        ctx.attr.main_class,
-        jvm_flags,
-    )
     if len(ctx.attr.srcs) == 0 and len(ctx.attr.deps) > 0:
         fail("deps without srcs is invalid. To add runtime classpath and resources, use runtime_deps.", attr = "deps")
-
-    # Get java runtime files from toolchain for runfiles (needed for Windows launcher)
-    java_runtime = ctx.toolchains["@bazel_tools//tools/jdk:runtime_toolchain_type"].java_runtime
-
-    return _make_providers(
-        ctx,
-        providers,
-        ctx.attr.deps + ctx.attr.runtime_deps + ctx.attr.data,
-        depset(
-            order = "default",
-            transitive = [providers.java.transitive_runtime_jars, java_runtime.files],
-        ),
-        launcher_result.executable,
-        RunEnvironmentInfo(
-            environment = _expand_env(ctx),
-            inherited_environment = ctx.attr.env_inherit,
-        ),
+    return _processing_pipeline.run(
+        ctx = ctx,
+        java_package = None,
+        pipeline = base_binary_pipeline(),
     )
 
 _SPLIT_STRINGS = [
