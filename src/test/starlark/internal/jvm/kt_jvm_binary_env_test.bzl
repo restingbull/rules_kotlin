@@ -111,8 +111,10 @@ def _kt_jvm_binary_launcher_test_impl(env, target):
     env.expect.that_target(target).has_provider(DefaultInfo)
     env.expect.that_target(target).has_provider(RunEnvironmentInfo)
 
-    # The launcher phase produced the runnable executable for this target.
-    env.expect.that_target(target).executable().short_path_equals(
+    # The launcher phase produced the runnable executable for this target. Windows names it
+    # "<name>.exe", so match the stem after dropping any platform suffix rather than the exact name.
+    executable = target[DefaultInfo].files_to_run.executable
+    env.expect.that_str(executable.short_path.removesuffix(".exe")).equals(
         "src/test/starlark/internal/jvm/" + target.label.name,
     )
 
