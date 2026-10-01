@@ -1,0 +1,112 @@
+slug = "design-jvm-pipeline-2-ksp-kapt-phases"
+kind = "design"
+title = "Pipeline 2/3: extract KSP + KAPT compile steps into named immutable-struct phases in compile.bzl"
+status = "approved"
+created = "2026-10-01"
+at_commit = "d2b145b"
+
+rationale = """
+Builds on restingbull/jvm-pipeline-1 (new branch restingbull/jvm-pipeline-2). Pipeline-1 landed the
+pipeline SEAM — the vendored processing_pipeline runner (src/main/starlark/core/pipeline/pipeline.bzl)
+plus impl.bzl wiring where base_library/binary/test_pipeline = DepsProcessor + ONE opaque
+JvmCompileProcessor (+Launcher/TestLauncher) — and deliberately REVERTED compile.bzl byte-for-byte to
+its pre-decomposition state. So the compile engine `_run_kt_java_builder_actions` in
+kotlin/internal/jvm/compile.bzl is still the monolith: it threads 5 mutable accumulator lists by
+reference/append (generated_kapt_src_jars, generated_ksp_src_jars, kt_stubs_for_java, compile_jars,
+output_jars) across KAPT -> KSP -> KotlinCompile -> JavaCompile -> AbiFold -> Jdeps.
+
+PIPELINE-2 SCOPE (this design): extract exactly two stages — KSP and KAPT — into named phase functions
+_phase_ksp and _phase_kapt inside compile.bzl. Each takes EXPLICIT inputs and returns an IMMUTABLE
+struct; each DELETES its own by-reference accumulator contributions. The remaining stages
+(KotlinCompile, JavaCompile, AbiFold, Jdeps, annotation_processing assembly) stay monolithic in this
+arc — they are later PRs. KAPT currently feeds generated_kapt_src_jars + output_jars + kt_stubs_for_java
+(a neverlink stub JavaInfo); KSP feeds generated_ksp_src_jars + output_jars (no stub). After pipeline-2
+the caller composes those lists fresh from the returned structs via `+`, with KAPT-before-KSP order
+preserved for output_jars; no KAPT/KSP append still mutates a shared list by reference.
+
+VERIFICATION (user-selected, OVERRIDES the parent design's aquery gate for this arc): rely on the
+analysis/contract tests, NOT a `bazel aquery` golden gate. The phase_*_test.bzl suite was written AHEAD
+of this refactor — phase_preprocessors_test.bzl's test_kapt_phase_contract / test_ksp_phase_contract
+already lock the _phase_kapt/_phase_ksp struct contract via action-graph goldens (exact output jar
+basenames -kapt-gensrc.jar / -kapt-generated-class.jar / -ksp-gensrc.jar / -ksp-genclasses.jar and exact
+mnemonics KotlinKapt / KotlinKsp2 / KotlinCompile / Javac) against a REAL kt_jvm_library target. Those
+observable-output assertions are the golden; they must stay green byte-for-byte across the extraction.
+No aquery harness is ported (that would be its own bead); the analysis tests are the stronger,
+committed, regression-locking gate.
+
+ACCUMULATOR FORMALIZATION (user-selected): each phase returns its OWN immutable struct and the caller
+bridges to the lists the still-monolithic KotlinCompile/JavaCompile stages consume (src_jars =
+kapt.gensrc + ksp.gensrc, etc.). A single threaded engine-state struct is REJECTED for this arc — with
+only 2 of ~6 phases extracted it is the accumulator pattern wearing a struct mask and creates an
+impedance seam against the 4 monolithic stages that still want raw lists. The caller's transitional `+`
+composition is accepted debt that congeals into real engine-state in a later PR.
+
+ORDER + GRANULARITY (user-selected): TWO commits on branch restingbull/jvm-pipeline-2, KSP FIRST then
+KAPT. KSP is the simpler extraction (touches 2 accumulators vs KAPT's 3 — KAPT uniquely owns the
+kt_stubs_for_java neverlink stub), so it proves the extraction pattern at lower risk before the harder
+phase. Extraction/commit order is independent of EXECUTION order: KAPT still runs before KSP at
+action-graph time, and the two are independently gated (both may fire on the same target; they are NOT
+mutually exclusive). Two commits keep a clean per-phase bisect checkpoint — the whole strangler-fig
+safety claim. Not collapsed to one commit despite the task bundling the conversation.
+
+PRECEDENCE GUARDRAIL: the annotation_processing provider (assembled at the END of the engine) prefers
+KSP gensrc/class over KAPT when both ran. This is named-field SELECTION, not accumulator-timing, so it
+is UNAFFECTED by extracting these two phases while Kotlin/Java/abi/jdeps stay monolithic — PROVIDED the
+returned structs keep KAPT vs KSP outputs as SEPARATE NAMED FIELDS (never a merged gensrc list), so the
+end-assembly still has the distinction it selects on.
+
+END-STATE INTENT (user, forward-looking — pipeline-2 must NOT foreclose it): KSP + KAPT become
+DYNAMICALLY CONFIGURED and the pipeline EXTENSIBLE. The eventual runner-swap PR (parent design PR7+)
+turns these stages into pluggable, insertion-ordered processors selectable per target. Pipeline-2's job
+is only to shape _phase_ksp / _phase_kapt as pure explicit-input/immutable-struct functions — the exact
+shape a pluggable processor needs — so the later dynamic-configuration / extensibility work is a
+re-wiring, not a rewrite. Do NOT hardcode call-site assumptions that would block that; but also do NOT
+build the dynamic-config or runner integration in this arc (YAGNI — it is the next PR).
+"""
+
+constraints = [
+  "SCOPE is KSP + KAPT ONLY: extract _phase_ksp and _phase_kapt inside kotlin/internal/jvm/compile.bzl; leave KotlinCompile/JavaCompile/AbiFold/Jdeps/annotation_processing-assembly monolithic for later PRs.",
+  "Each extracted phase takes EXPLICIT inputs (no reliance on enclosing mutable lists) and returns an IMMUTABLE struct; delete that phase's by-reference accumulator appends.",
+  "KAPT struct exposes its three outputs as separate named fields (gensrc, neverlink stub for kt_stubs_for_java, generated class jar); KSP struct exposes its two (gensrc, generated class jar) and simply lacks the stub field — NEVER merge KAPT and KSP gensrc into one list.",
+  "Caller composes fresh lists via `+` from the returned structs, preserving KAPT-before-KSP order for output_jars and the combined --source_jars list (generated_kapt_src_jars + generated_ksp_src_jars) KotlinCompile consumes.",
+  "Verification is the analysis/contract tests, NOT aquery: phase_preprocessors_test.bzl (test_kapt_phase_contract / test_ksp_phase_contract) and the adjacent phase_*/rule_tests suites must stay green with identical observable action-graph goldens (same output jar basenames + mnemonics KotlinKapt/KotlinKsp2/KotlinCompile/Javac). Do NOT port or add an aquery fixture-matrix harness in this arc.",
+  "Do NOT introduce a single threaded engine-state struct in this arc; per-phase immutable structs + caller `+` composition only.",
+  "Two commits on restingbull/jvm-pipeline-2, KSP first then KAPT; keep each commit independently green under the contract tests (clean per-phase bisect).",
+  "Preserve exact action-graph output: output jar basenames, mnemonics, neverlink stub shape, and the end-assembled annotation_processing KSP-over-KAPT precedence all unchanged.",
+  "The shared compile engine remains dual-consumed by BOTH the JVM and android rule paths — no fork (parent-design invariant).",
+  "No new //src/main/starlark/core/... module introduced by this arc may transitively load @rules_android; dep_hygiene_test.bzl must keep passing.",
+  "Shape _phase_ksp/_phase_kapt as pure explicit-input/immutable-struct functions compatible with a future pluggable-processor runner, but do NOT build dynamic configuration or runner integration here (deferred to parent PR7+).",
+  "Branches in this arc are committed LOCALLY only and MUST NOT be pushed to a remote (parent-design invariant).",
+]
+
+rejected = [
+  { option = "aquery byte-identical golden gate (parent-design mandate)", reason = "user override: skip aquery, the pre-written analysis/contract tests are the better, committed, stronger-than-basename gate; porting the sibling-branch aquery fixture-matrix harness is scope-creep and its own bead." },
+  { option = "Single threaded engine-state struct across phases", reason = "with only 2 of ~6 phases extracted it is the accumulator pattern wearing a struct mask and creates an impedance seam against the 4 monolithic stages still consuming raw lists; it is the end-state, not pipeline-2's call." },
+  { option = "One combined 'extract ksp+kapt' commit", reason = "task bundles the conversation, not authority to collapse; one-phase-per-PR is the strangler-fig safety claim — two commits give two independent contract-test gates and a clean bisect for zero cost." },
+  { option = "KAPT-first (literal parent PR2/PR3 order)", reason = "user chose KSP-first: KSP touches 2 accumulators vs KAPT's 3 (KAPT owns the kt_stubs_for_java neverlink stub), so KSP proves the extraction pattern at lower risk; extraction order is independent of KAPT-before-KSP execution order." },
+  { option = "Move KAPT/KSP out to pipeline.bzl processor granularity now", reason = "parent design keeps phases INSIDE compile.bzl for this arc; the processor/runner swap is deferred PR7+. The phase test docstrings pin the _phase_* contract in compile.bzl, not the processor chain." },
+  { option = "Build the dynamic-configuration / extensible pluggable-processor end-state in pipeline-2", reason = "YAGNI for this arc — pipeline-2 only shapes the phases so the later re-wiring is cheap; building dynamic config now enlarges blast radius and is the next PR's job." },
+]
+
+success_criteria = [
+  "_phase_ksp exists in compile.bzl: takes explicit inputs, returns an immutable struct with named fields (ksp_generated_src_jar, ksp_generated_class_jar); no KSP append mutates generated_ksp_src_jars or output_jars by reference.",
+  "_phase_kapt exists in compile.bzl: takes explicit inputs, returns an immutable struct with named fields (ap_generated_src_jar, kapt_generated_stub_jar, kapt_generated_class_jar); no KAPT append mutates generated_kapt_src_jars, kt_stubs_for_java, or output_jars by reference.",
+  "Caller (_run_kt_java_builder_actions) composes generated_kapt_src_jars / generated_ksp_src_jars / kt_stubs_for_java / output_jars fresh from the structs via `+`, preserving KAPT-before-KSP order.",
+  "phase_preprocessors_test.bzl test_kapt_phase_contract and test_ksp_phase_contract pass with identical observable goldens (basenames -kapt-gensrc.jar / -kapt-generated-class.jar / -ksp-gensrc.jar / -ksp-genclasses.jar; mnemonics KotlinKapt / KotlinKsp2).",
+  "All phase_compile/aggregation/composition_test.bzl and rule_tests.bzl suites + the full kt_jvm_* build/test targets stay green; KotlinCompile still receives the combined KAPT+KSP source jars unchanged.",
+  "annotation_processing provider still prefers KSP gensrc/class over KAPT when both ran (KAPT vs KSP kept as separate named struct fields; no merged gensrc list).",
+  "Exactly two commits on restingbull/jvm-pipeline-2 — KSP extraction, then KAPT extraction — each independently green under the contract tests.",
+  "kt_jvm_library reverse-deps show NO @rules_android in the load graph; dep_hygiene_test.bzl green.",
+  "Android + JVM rule paths still invoke ONE shared compile engine (no fork).",
+  "No branch in this arc is pushed to a remote.",
+  "_phase_ksp / _phase_kapt are pure explicit-input/immutable-struct functions — shaped to become pluggable processors later — with no dynamic-configuration or runner integration added in this arc.",
+]
+
+designs_components = [
+  "rules_kotlin/kotlin/internal/jvm/compile.bzl",
+  "rules_kotlin/src/test/starlark/compile/phase_preprocessors_test.bzl",
+  "rules_kotlin/src/test/starlark/compile/phase_compile_test.bzl",
+  "rules_kotlin/src/test/starlark/compile/phase_aggregation_test.bzl",
+  "rules_kotlin/src/test/starlark/compile/phase_composition_test.bzl",
+  "rules_kotlin/src/test/starlark/compile/rule_tests.bzl",
+]
