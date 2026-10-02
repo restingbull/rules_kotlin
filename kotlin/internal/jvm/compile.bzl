@@ -1004,6 +1004,36 @@ def _kt_jvm_produce_output_jar_actions(
         ),
     )
 
+def _phase_ksp(
+        ctx,
+        toolchains,
+        srcs,
+        compile_deps,
+        ksp_transitive_runtime_jars,
+        ksp_options,
+        has_kt_sources,
+        ksp_annotation_processors):
+    """Runs the KSP stage of compilation as a self-contained phase.
+
+    Returns:
+        An immutable struct carrying ksp_generated_src_jar and
+        ksp_generated_class_jar, or None when the KSP gate is not met.
+    """
+    if not (has_kt_sources and ksp_annotation_processors):
+        return None
+    ksp_outputs = _run_ksp_builder_actions(
+        ctx,
+        toolchains = toolchains,
+        srcs = srcs,
+        compile_deps = compile_deps,
+        transitive_runtime_jars = ksp_transitive_runtime_jars,
+        ksp_options = ksp_options,
+    )
+    return struct(
+        ksp_generated_src_jar = ksp_outputs.ksp_generated_src_jar,
+        ksp_generated_class_jar = ksp_outputs.ksp_generated_class_jar,
+    )
+
 def _run_kt_java_builder_actions(
         ctx,
         rule_kind,
@@ -1055,21 +1085,22 @@ def _run_kt_java_builder_actions(
         )
 
     # Run KSP
-    ksp_generated_class_jar = None
     ksp_generated_src_jar = None
-    if has_kt_sources and ksp_annotation_processors:
-        ksp_outputs = _run_ksp_builder_actions(
-            ctx,
-            toolchains = toolchains,
-            srcs = srcs,
-            compile_deps = compile_deps,
-            transitive_runtime_jars = ksp_transitive_runtime_jars,
-            ksp_options = ksp_options,
-        )
-        ksp_generated_class_jar = ksp_outputs.ksp_generated_class_jar
-        output_jars.append(ksp_generated_class_jar)
-        ksp_generated_src_jar = ksp_outputs.ksp_generated_src_jar
-        generated_ksp_src_jars.append(ksp_generated_src_jar)
+    ksp = _phase_ksp(
+        ctx,
+        toolchains = toolchains,
+        srcs = srcs,
+        compile_deps = compile_deps,
+        ksp_transitive_runtime_jars = ksp_transitive_runtime_jars,
+        ksp_options = ksp_options,
+        has_kt_sources = has_kt_sources,
+        ksp_annotation_processors = ksp_annotation_processors,
+    )
+    ksp_src = [ksp.ksp_generated_src_jar] if ksp else []
+    ksp_out = [ksp.ksp_generated_class_jar] if ksp else []
+    generated_ksp_src_jars = generated_ksp_src_jars + ksp_src
+    output_jars = output_jars + ksp_out
+    ksp_generated_src_jar = ksp.ksp_generated_src_jar if ksp else None
 
     compilation_outputs = []
     ap_generated_src_jar = None
