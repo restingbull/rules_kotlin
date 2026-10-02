@@ -1034,6 +1034,43 @@ def _phase_ksp(
         ksp_generated_class_jar = ksp_outputs.ksp_generated_class_jar,
     )
 
+def _phase_kapt(
+        ctx,
+        rule_kind,
+        toolchains,
+        srcs,
+        compile_deps,
+        deps_artifacts,
+        annotation_processors,
+        transitive_runtime_jars,
+        plugins,
+        has_kt_sources):
+    """Runs the KAPT stage of compilation as a self-contained phase.
+
+    Returns:
+        An immutable struct carrying ap_generated_src_jar, kapt_generated_stub_jar
+        (the raw stub jar; JavaInfo wrapping stays caller-side), and
+        kapt_generated_class_jar, or None when the KAPT gate is not met.
+    """
+    if not (has_kt_sources and annotation_processors):
+        return None
+    kapt_outputs = _run_kapt_builder_actions(
+        ctx,
+        rule_kind = rule_kind,
+        toolchains = toolchains,
+        srcs = srcs,
+        compile_deps = compile_deps,
+        deps_artifacts = deps_artifacts,
+        annotation_processors = annotation_processors,
+        transitive_runtime_jars = transitive_runtime_jars,
+        plugins = plugins,
+    )
+    return struct(
+        ap_generated_src_jar = kapt_outputs.ap_generated_src_jar,
+        kapt_generated_stub_jar = kapt_outputs.kapt_generated_stub_jar,
+        kapt_generated_class_jar = kapt_outputs.kapt_generated_class_jar,
+    )
+
 def _run_kt_java_builder_actions(
         ctx,
         rule_kind,
@@ -1062,27 +1099,27 @@ def _run_kt_java_builder_actions(
     has_kt_sources = srcs.kt or srcs.src_jars
 
     # Run KAPT
-    if has_kt_sources and annotation_processors:
-        kapt_outputs = _run_kapt_builder_actions(
-            ctx,
-            rule_kind = rule_kind,
-            toolchains = toolchains,
-            srcs = srcs,
-            compile_deps = compile_deps,
-            deps_artifacts = deps_artifacts,
-            annotation_processors = annotation_processors,
-            transitive_runtime_jars = transitive_runtime_jars,
-            plugins = plugins,
-        )
-        generated_kapt_src_jars.append(kapt_outputs.ap_generated_src_jar)
-        output_jars.append(kapt_outputs.kapt_generated_class_jar)
-        kt_stubs_for_java.append(
-            JavaInfo(
-                compile_jar = kapt_outputs.kapt_generated_stub_jar,
-                output_jar = kapt_outputs.kapt_generated_stub_jar,
-                neverlink = True,
-            ),
-        )
+    kapt = _phase_kapt(
+        ctx,
+        rule_kind = rule_kind,
+        toolchains = toolchains,
+        srcs = srcs,
+        compile_deps = compile_deps,
+        deps_artifacts = deps_artifacts,
+        annotation_processors = annotation_processors,
+        transitive_runtime_jars = transitive_runtime_jars,
+        plugins = plugins,
+        has_kt_sources = has_kt_sources,
+    )
+    kapt_src = [kapt.ap_generated_src_jar] if kapt else []
+    kapt_out = [kapt.kapt_generated_class_jar] if kapt else []
+    kapt_stub = [JavaInfo(
+        compile_jar = kapt.kapt_generated_stub_jar,
+        output_jar = kapt.kapt_generated_stub_jar,
+        neverlink = True,
+    )] if kapt else []
+    generated_kapt_src_jars = generated_kapt_src_jars + kapt_src
+    kt_stubs_for_java = kt_stubs_for_java + kapt_stub
 
     # Run KSP
     ksp_generated_src_jar = None
@@ -1099,7 +1136,7 @@ def _run_kt_java_builder_actions(
     ksp_src = [ksp.ksp_generated_src_jar] if ksp else []
     ksp_out = [ksp.ksp_generated_class_jar] if ksp else []
     generated_ksp_src_jars = generated_ksp_src_jars + ksp_src
-    output_jars = output_jars + ksp_out
+    output_jars = output_jars + kapt_out + ksp_out
     ksp_generated_src_jar = ksp.ksp_generated_src_jar if ksp else None
 
     compilation_outputs = []
