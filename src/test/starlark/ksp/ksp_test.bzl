@@ -16,6 +16,9 @@
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("@rules_java//java/common:java_info.bzl", "JavaInfo")
+
+# buildifier: disable=bzl-visibility
+load("//kotlin/internal:defs.bzl", "KtJvmInfo")
 load("//src/main/starlark/core/plugin:providers.bzl", "KspPluginInfo")
 
 def _ksp_outputs_test_impl(ctx):
@@ -38,6 +41,15 @@ def _ksp_outputs_test_impl(ctx):
         len(java_info.runtime_output_jars) > 0,
         "Target should have runtime output jars",
     )
+
+    # IDE annotation-processing metadata must keep referring to the Kotlin
+    # output, including when KSP/KAPT also causes a Java compilation.
+    kotlin_info = target[KtJvmInfo]
+    processing = kotlin_info.annotation_processing
+    asserts.true(env, processing.enabled)
+    asserts.equals(env, target.label.name + "-kt.jar", processing.class_jar.basename)
+    asserts.equals(env, target.label.name + "-ksp-gensrc.jar", processing.source_jar.basename)
+    asserts.equals(env, java_info.outputs.jdeps, kotlin_info.outputs.jdeps)
 
     return analysistest.end(env)
 
@@ -298,27 +310,3 @@ def _ksp_processor_classpath_isolation_test_impl(ctx):
     return analysistest.end(env)
 
 ksp_processor_classpath_isolation_test = analysistest.make(_ksp_processor_classpath_isolation_test_impl)
-
-def ksp_test_suite(name):
-    """Create test suite for KSP2 integration tests.
-
-    Args:
-        name: Name of the test suite
-    """
-
-    # We can't create actual kt_jvm_library targets in .bzl files,
-    # so the tests are defined in BUILD.bazel and this just creates the suite
-    native.test_suite(
-        name = name,
-        tests = [
-            ":ksp_outputs_test",
-            ":ksp_action_test",
-            ":ksp_single_action_test",
-            ":ksp_plugin_options_provider_test",
-            ":ksp_plugin_empty_options_provider_test",
-            ":ksp_options_action_test",
-            ":ksp_javac_excludes_srcjars_test",
-            ":ksp_javac_includes_srcjars_test",
-            ":ksp_processor_classpath_isolation_test",
-        ],
-    )

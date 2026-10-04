@@ -16,7 +16,7 @@ bazel_dep(name = "platforms", version = "0.0.11")
 bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "rules_java", version = "8.9.0")
 bazel_dep(name = "rules_license", version = "1.0.0")
-bazel_dep(name = "rules_android", version = "0.7.3")
+bazel_dep(name = "rules_android", version = "0.8.0")
 
 remote_android_extensions = use_extension(
     "@rules_android//bzlmod_extensions:android_extensions.bzl",
@@ -73,9 +73,9 @@ use_repo(
     "kotlinx_serialization_json_jvm",
 )
 
-register_toolchains("//src/main/starlark/core/compile/cli")
+register_toolchains("//src/main/starlark/core/compile:cli_toolchain")
 
-register_toolchains("//kotlin/internal:default_toolchain")
+register_toolchains("//kotlin:default_toolchain")
 
 # Development dependencies
 # TODO(bencodes) A bunch of these dependencies need to be marked as dev_dependencies but before we can do that

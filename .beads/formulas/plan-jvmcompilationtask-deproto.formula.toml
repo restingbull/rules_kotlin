@@ -1,0 +1,251 @@
+formula = "plan-jvmcompilationtask-deproto"
+version = 1
+description = "De-proto JvmCompilationTask: convert kotlin_model protobuf to pure Kotlin data classes/enums, drop kotlin_model_java_proto + protobuf_java_util, keep deps.proto/jdeps + worker_protocol."
+vars = ["plan", "design"]
+
+[[steps]]
+id = "step-1-model-data-classes"
+type = "impl"
+title = "Step 1 — Kotlin model data classes + enums (new :model target)"
+skill = "java-dev"
+needs = []
+affects = [
+  "src/main/kotlin/io/bazel/kotlin/model/BUILD.bazel",
+  "src/main/kotlin/io/bazel/kotlin/model/Model.kt",
+  "src/test/kotlin/io/bazel/kotlin/model/BUILD.bazel",
+  "src/test/kotlin/io/bazel/kotlin/model/ModelTest.kt",
+]
+description = """
+skill: java-dev (Kotlin on JVM; this is a Bazel repo so BUILD edits via bazel-dev conventions)
+repo_path: /Users/restingbull/Workspaces/rules_kotlin/.claude/worktrees/refactor-jvmtask-kotlinic
+design-ref: /Users/restingbull/Workspaces/rules_kotlin/.claude/worktrees/refactor-jvmtask-kotlinic/.beads/designs/design-jvmcompilationtask-deproto.design.toml
+
+GOAL (DDD segment: Proto Model aggregate data types — JvmCompilationTask + KotlinToolchain). Create a NEW standalone Bazel target //src/main/kotlin/io/bazel/kotlin/model (package io.bazel.kotlin.model, kt_bootstrap_library) holding pure Kotlin data classes + enums that replace the generated kotlin_model protobuf. This step ONLY creates the target + its own unit tests; it does NOT yet wire into any consumer (no collision risk yet). Tree stays green because nothing depends on :model.
+
+CRITICAL FQN NOTE: 5 top-level proto types collide by FQN with these new classes (JvmCompilationTask, CompilationTaskInfo, KotlinToolchainInfo, Platform, RuleKind). The JVM classpath cannot host both, so DO NOT add :model as a dep of any existing builder/tasks/toolchain/utils target in this step — that happens atomically in step-3. The new target compiles in isolation (deps = KOTLIN_STDLIBS only).
+
+ACCESSOR-NAMING CONTRACT (design decision B = hybrid, minimize call-site churn): name every repeated field with the proto getter suffix `List` so existing READ sites compile unchanged in step-3. e.g. classpathList, directDependenciesList, kotlinSourcesList, javaSourcesList, sourceJarsList, processorsList, processorpathsList, stubsPluginOptionsList, stubsPluginsList, stubsPluginClasspathList, compilerPluginOptionsList, compilerPluginsList, compilerPluginClasspathList, javacFlagsList, depsArtifactsList, pluginsList, passthroughFlagsList, friendPathsList, debugList, apiImplClasspathList, jvmAbiGenClasspathList, skipCodeGenClasspathList, kaptClasspathList, jdepsGenClasspathList, optionsList, phasesList. Scalars keep proto field names in camelCase (label, moduleName, primaryOutputPath, strictKotlinDeps, reducedClasspathMode, treatInternalAsPrivateInAbiJar, removePrivateClassesInAbiJar, removeDebugInfo, preserveDeclarationOrder, removeDataClassCopyIfConstructorIsPrivate, languageVersion, apiVersion, coroutines, jvmTarget, classpathFingerprint, jar, jdeps, srcjar, abijar, generatedJavaSrcJar, generatedJavaStubJar, generatedClassJar, generatedKspSrcJar, generatedKspClassesJar, classes, generatedClasses, generatedSources, temp, generatedStubClasses, abiClasses, generatedJavaSources, javaClasses, coverageMetadataClasses, key, value, id).
+
+ABSENCE SEMANTICS (design decision B): preserve proto3 defaults so output/input gates (outputs.*.isNotEmpty() etc.) behave identically. Every String field defaults to "" and every List field defaults to emptyList(). Every Boolean defaults to false. The ONLY nullable field is KotlinToolchainInfo.btapi: BtapiRuntime? = null (replaces proto hasBtapi() — presence IS the BTAPI-vs-legacy discriminator).
+
+apis (all in package io.bazel.kotlin.model, file Model.kt):
+  enum class Platform { JVM, ANDROID }
+  enum class RuleKind { LIBRARY, BINARY, TEST, IMPORT }
+  enum class PluginPhase { PLUGIN_PHASE_UNSPECIFIED, PLUGIN_PHASE_COMPILE, PLUGIN_PHASE_STUBS }
+  // valueOf + UNRECOGNIZED fallback parity: KotlinBuilder today parses Platform/RuleKind via proto valueOf
+  // with explicit UNRECOGNIZED handling. Provide a companion parse helper per enum that maps a known
+  // name to the constant and maps an unknown/UNRECOGNIZED name to a defined fallback WITHOUT throwing,
+  // reproducing the exact fallback KotlinBuilder uses today (read KotlinBuilder.kt to confirm the
+  // current fallback before choosing; pin it with a test):
+  //   companion object { fun fromName(name: String?): Platform  (unknown -> JVM fallback, confirm) }
+  //   companion object { fun fromName(name: String?): RuleKind   (unknown -> LIBRARY fallback, confirm) }
+  //   companion object { fun fromName(name: String?): PluginPhase (unknown -> PLUGIN_PHASE_UNSPECIFIED) }
+  data class Common(val languageVersion: String = "", val apiVersion: String = "", val coroutines: String = "")
+  data class Jvm(val jvmTarget: String = "")
+  data class BtapiRuntime(
+    val apiImplClasspathList: List<String> = emptyList(),
+    val jvmAbiGenClasspathList: List<String> = emptyList(),
+    val skipCodeGenClasspathList: List<String> = emptyList(),
+    val kaptClasspathList: List<String> = emptyList(),
+    val jdepsGenClasspathList: List<String> = emptyList(),
+    val classpathFingerprint: String = "")
+  data class KotlinToolchainInfo(val common: Common = Common(), val jvm: Jvm = Jvm(), val btapi: BtapiRuntime? = null)
+  data class CompilationTaskInfo(val label: String = "", val platform: Platform = Platform.JVM,
+    val ruleKind: RuleKind = RuleKind.LIBRARY, val moduleName: String = "",
+    val passthroughFlagsList: List<String> = emptyList(), val toolchainInfo: KotlinToolchainInfo = KotlinToolchainInfo(),
+    val friendPathsList: List<String> = emptyList(), val primaryOutputPath: String = "",
+    val debugList: List<String> = emptyList(), val strictKotlinDeps: String = "", val reducedClasspathMode: String = "",
+    val treatInternalAsPrivateInAbiJar: Boolean = false, val removePrivateClassesInAbiJar: Boolean = false,
+    val removeDebugInfo: Boolean = false, val preserveDeclarationOrder: Boolean = false,
+    val removeDataClassCopyIfConstructorIsPrivate: Boolean = false)
+  data class Directories(val classes: String = "", val generatedClasses: String = "", val generatedSources: String = "",
+    val temp: String = "", val generatedStubClasses: String = "", val abiClasses: String = "",
+    val generatedJavaSources: String = "", val javaClasses: String = "", val coverageMetadataClasses: String = "")
+  data class Outputs(val jar: String = "", val jdeps: String = "", val srcjar: String = "", val abijar: String = "",
+    val generatedJavaSrcJar: String = "", val generatedJavaStubJar: String = "", val generatedClassJar: String = "",
+    val generatedKspSrcJar: String = "", val generatedKspClassesJar: String = "")
+  data class PluginOption(val key: String = "", val value: String = "")
+  data class Plugin(val id: String = "", val classpathList: List<String> = emptyList(),
+    val optionsList: List<PluginOption> = emptyList(), val phasesList: List<PluginPhase> = emptyList())
+  data class Inputs(val classpathList: List<String> = emptyList(), val directDependenciesList: List<String> = emptyList(),
+    val kotlinSourcesList: List<String> = emptyList(), val javaSourcesList: List<String> = emptyList(),
+    val sourceJarsList: List<String> = emptyList(), val processorsList: List<String> = emptyList(),
+    val processorpathsList: List<String> = emptyList(), val stubsPluginOptionsList: List<String> = emptyList(),
+    val stubsPluginsList: List<String> = emptyList(), val stubsPluginClasspathList: List<String> = emptyList(),
+    val compilerPluginOptionsList: List<String> = emptyList(), val compilerPluginsList: List<String> = emptyList(),
+    val compilerPluginClasspathList: List<String> = emptyList(), val javacFlagsList: List<String> = emptyList(),
+    val depsArtifactsList: List<String> = emptyList(), val pluginsList: List<Plugin> = emptyList())
+  data class JvmCompilationTask(val info: CompilationTaskInfo = CompilationTaskInfo(),
+    val directories: Directories = Directories(), val outputs: Outputs = Outputs(), val inputs: Inputs = Inputs(),
+    val compileKotlin: Boolean = false, val instrumentCoverage: Boolean = false)
+
+do:
+  1. Read src/main/protobuf/kotlin_model.proto (fields) and src/main/kotlin/io/bazel/kotlin/builder/tasks/KotlinBuilder.kt (confirm the exact Platform/RuleKind valueOf + UNRECOGNIZED fallback currently used) before writing enums.
+  2. Author src/test/kotlin/io/bazel/kotlin/model/ModelTest.kt (RED): assert (a) default construction yields "" strings / emptyList / btapi == null / compileKotlin == false; (b) .copy() replaces one field leaving others intact (SourceJarsExpanded rebuild precedent); (c) Platform.fromName/RuleKind.fromName/PluginPhase.fromName map known names and fall back on unknown WITHOUT throwing, matching KotlinBuilder's current fallback; (d) enum .name returns the proto-style constant string (TaskUtils relies on platform.name / ruleKind.name).
+  3. Create src/test/kotlin/io/bazel/kotlin/model/BUILD.bazel with a kt_rules_test (or the repo's standard model test rule) target depending on //src/main/kotlin/io/bazel/kotlin/model.
+  4. ✗ mcp__bazel__test(["//src/test/kotlin/io/bazel/kotlin/model:..."]) -> FAIL (Model.kt / target absent).
+  5. Author src/main/kotlin/io/bazel/kotlin/model/Model.kt with the apis above and src/main/kotlin/io/bazel/kotlin/model/BUILD.bazel (kt_bootstrap_library named "model", srcs=["Model.kt"], visibility public to //src/main/kotlin/io/bazel/kotlin/..., deps = []; mirror KOTLIN_STDLIBS usage from sibling bootstrap targets). NO serialization plugin here — core model is plugin-free.
+  6. ✓ mcp__bazel__test(["//src/test/kotlin/io/bazel/kotlin/model:..."]) -> PASS. Also mcp__bazel__build(["//src/main/kotlin/io/bazel/kotlin/model:model"]) -> PASS.
+  7. Confirm no regression: mcp__bazel__build(["//src/main/kotlin/io/bazel/kotlin/builder/cmd:build"]) still green (this step added nothing to the builder graph).
+  8. mcp__git__git(["add","src/main/kotlin/io/bazel/kotlin/model","src/test/kotlin/io/bazel/kotlin/model"], repo_path:"/Users/restingbull/Workspaces/rules_kotlin/.claude/worktrees/refactor-jvmtask-kotlinic")
+     + mcp__git__git(["commit","-m","feat(model): pure-Kotlin JvmCompilationTask data classes + enums (new :model target)"], repo_path:"/Users/restingbull/Workspaces/rules_kotlin/.claude/worktrees/refactor-jvmtask-kotlinic")
+
+verify: mcp__bazel__test(["//src/test/kotlin/io/bazel/kotlin/model:..."]) exit 0 AND mcp__bazel__build(["//src/main/kotlin/io/bazel/kotlin/model:model"]) exit 0
+
+constraints:
+  - DO NOT add :model as a dep of any existing target this step (same-FQN collision with proto — atomic swap is step-3).
+  - Repeated fields MUST use the `List` accessor suffix (proto-getter parity) to keep read sites churn-free in step-3.
+  - String default "" / List default emptyList / Boolean default false; only KotlinToolchainInfo.btapi is nullable.
+  - Enum fromName fallback MUST reproduce KotlinBuilder's current UNRECOGNIZED behavior exactly; pin with a test; do not invent a throwing path.
+  - git ONLY via mcp__git__git; bazel ONLY via mcp__bazel__*.
+
+affects: src/main/kotlin/io/bazel/kotlin/model/Model.kt, src/main/kotlin/io/bazel/kotlin/model/BUILD.bazel, src/test/kotlin/io/bazel/kotlin/model/ModelTest.kt, src/test/kotlin/io/bazel/kotlin/model/BUILD.bazel
+"""
+
+[[steps]]
+id = "step-2-serialization-payload"
+type = "impl"
+title = "Step 2 — kotlinx.serialization plugins-payload DTO + bootstrap plugin wiring"
+skill = "bazel-dev"
+needs = ["step-1-model-data-classes"]
+affects = [
+  "src/main/starlark/core/compile/rules.bzl",
+  "src/main/kotlin/bootstrap.bzl",
+  "src/main/kotlin/io/bazel/kotlin/model/BUILD.bazel",
+  "src/main/kotlin/io/bazel/kotlin/model/PluginsPayload.kt",
+  "src/test/kotlin/io/bazel/kotlin/model/PluginsPayloadTest.kt",
+  "src/test/kotlin/io/bazel/kotlin/model/BUILD.bazel",
+]
+description = """
+skill: bazel-dev (core compile rules.bzl / bootstrap.bzl plugin threading is the crux) + java-dev for the Kotlin DTO
+repo_path: /Users/restingbull/Workspaces/rules_kotlin/.claude/worktrees/refactor-jvmtask-kotlinic
+design-ref: /Users/restingbull/Workspaces/rules_kotlin/.claude/worktrees/refactor-jvmtask-kotlinic/.beads/designs/design-jvmcompilationtask-deproto.design.toml
+
+GOAL (DDD segment: payload/serialization — design decision C). Introduce a kotlinx.serialization-based parser for the fixed plugins-payload JSON that Starlark payload.bzl produces, so step-3 can drop protobuf_java_util/JsonFormat. This step is ADDITIVE: the proto still exists, nothing is swapped yet; the new @Serializable DTO references ONLY non-colliding model types (Plugin/PluginOption/PluginPhase from step-1 are nested-in-proto so their new top-level FQNs do not collide). Tree stays green.
+
+ENABLING INFRA (discovery blocker): kt_bootstrap_library -> core_kt_jvm_library (src/main/starlark/core/compile/rules.bzl) has NO `plugins` attribute and kt_tools.compile receives no plugin classpath/options. @Serializable REQUIRES the kotlinx-serialization compiler plugin at compile time. So this step FIRST extends the bootstrap/core rule to thread a compiler plugin (jar classpath + plugin-id options) into kt_tools.compile, then applies it to the owning target. Design constraint explicitly sanctions this: "wire the kotlinx serialization compiler plugin + runtime into the bootstrap target owning PluginsPayloadParser."
+
+DEP COORDINATES (confirm exact labels before use — MODULE.bazel already registers these repos):
+  compiler plugin target: @rules_kotlin//kotlin/compiler:kotlinx-serialization-compiler-plugin (used by examples/android/libKtAndroid/BUILD.bazel) — confirm label.
+  runtime: @kotlinx_serialization_json_jvm//... and @kotlinx_serialization_core_jvm//... (registered in MODULE.bazel L61-74) — confirm the exact jar labels to put on the bootstrap classpath.
+  Use EXPLICIT versions already pinned in MODULE.bazel; never latest/*.
+
+apis:
+  // src/main/kotlin/io/bazel/kotlin/model/PluginsPayload.kt, package io.bazel.kotlin.model
+  @Serializable data class PluginsPayloadDto(val plugins: List<PluginDto> = emptyList())
+  @Serializable data class PluginDto(val id: String = "", val classpath: List<String> = emptyList(),
+    val options: List<PluginOptionDto> = emptyList(), val phases: List<String> = emptyList())
+  @Serializable data class PluginOptionDto(val key: String = "", val value: String = "")
+  object PluginsPayloadJson {
+    // Parse JSON -> List<Plugin> (model type). MUST replicate protobuf JsonFormat.ignoringUnknownFields:
+    //   - ignore unknown object keys (Json { ignoreUnknownKeys = true })
+    //   - SILENTLY DROP unknown enum phase names (PluginsPayloadParserTest pins this at L89-101);
+    //     map each phase string via PluginPhase.fromName and filter out UNRECOGNIZED/unknown rather than throw.
+    //   - reject malformed JSON (SerializationException surfaces as the existing parser's error contract)
+    fun parse(json: String): List<Plugin>
+  }
+
+do:
+  1. Author src/test/kotlin/io/bazel/kotlin/model/PluginsPayloadTest.kt (RED): port the behavioral pins from src/test/kotlin/io/bazel/kotlin/builder/tasks/PluginsPayloadParserTest.kt — (a) well-formed payload -> correct List<Plugin> with id/classpath/options/phases; (b) unknown top-level + nested keys ignored; (c) unknown enum phase names SILENTLY DROPPED (not throw); (d) malformed JSON rejected. Assert against model.Plugin (step-1).
+  2. Extend src/main/starlark/core/compile/rules.bzl: add an optional compiler-plugin parameter (plugin classpath jars + plugin-id + plugin options) to _COMMON_ATTRS / the _kt_jvm_library_impl, and pass it through kt_tools.compile(...). Thread the same through src/main/kotlin/bootstrap.bzl (kt_bootstrap_library kwargs). Keep it OPTIONAL/defaulted so all existing bootstrap targets are unaffected (no behavior change when unset).
+  3. Add serialization to the model target: in src/main/kotlin/io/bazel/kotlin/model/BUILD.bazel put PluginsPayload.kt in a target (either fold into :model or a sibling :payload) that applies the kotlinx-serialization compiler plugin and deps on the kotlinx-serialization-json runtime jar. Create the matching test target in src/test/kotlin/io/bazel/kotlin/model/BUILD.bazel.
+  4. ✗ mcp__bazel__test(["//src/test/kotlin/io/bazel/kotlin/model:PluginsPayloadTest"]) -> FAIL.
+  5. Author src/main/kotlin/io/bazel/kotlin/model/PluginsPayload.kt per apis.
+  6. ✓ mcp__bazel__test(["//src/test/kotlin/io/bazel/kotlin/model:PluginsPayloadTest"]) -> PASS.
+  7. No-regression: mcp__bazel__build(["//src/main/kotlin/io/bazel/kotlin/builder/cmd:build"]) + mcp__bazel__test(["//src/test/kotlin/io/bazel/kotlin/model:..."]) green; confirm the rules.bzl change did not break any existing bootstrap target by building //src/main/kotlin/io/bazel/kotlin/builder/tasks and //src/main/kotlin/io/bazel/kotlin/builder/toolchain.
+  8. mcp__git__git(["add","src/main/starlark/core/compile/rules.bzl","src/main/kotlin/bootstrap.bzl","src/main/kotlin/io/bazel/kotlin/model","src/test/kotlin/io/bazel/kotlin/model"], repo_path:"/Users/restingbull/Workspaces/rules_kotlin/.claude/worktrees/refactor-jvmtask-kotlinic")
+     + mcp__git__git(["commit","-m","feat(model): @Serializable plugins-payload DTO + kotlinx-serialization bootstrap plugin wiring"], repo_path:"/Users/restingbull/Workspaces/rules_kotlin/.claude/worktrees/refactor-jvmtask-kotlinic")
+
+verify: mcp__bazel__test(["//src/test/kotlin/io/bazel/kotlin/model:PluginsPayloadTest"]) exit 0
+
+constraints:
+  - Unknown enum phase names MUST be silently dropped (protobuf JsonFormat parity, pinned by PluginsPayloadParserTest); do NOT let kotlinx throw on unknown enum.
+  - The rules.bzl/bootstrap.bzl plugin parameter MUST be optional+defaulted so existing bootstrap targets are byte-for-byte behavior-unchanged when unset.
+  - Additive only: do NOT remove proto, do NOT touch PluginsPayloadParser.kt or any builder consumer this step (that is step-3).
+  - Pin kotlinx-serialization versions to the exact coordinates already in MODULE.bazel; never latest/*.
+  - git ONLY via mcp__git__git; bazel ONLY via mcp__bazel__*.
+
+affects: src/main/starlark/core/compile/rules.bzl, src/main/kotlin/bootstrap.bzl, src/main/kotlin/io/bazel/kotlin/model/PluginsPayload.kt, src/main/kotlin/io/bazel/kotlin/model/BUILD.bazel, src/test/kotlin/io/bazel/kotlin/model/PluginsPayloadTest.kt, src/test/kotlin/io/bazel/kotlin/model/BUILD.bazel
+"""
+
+[[steps]]
+id = "step-3-atomic-consumer-swap"
+type = "impl"
+title = "Step 3 — Atomic swap: flip construction, rewrite harness, drop proto + protobuf_java_util"
+skill = "java-dev"
+needs = ["step-1-model-data-classes", "step-2-serialization-payload"]
+affects = [
+  "src/main/kotlin/io/bazel/kotlin/builder/tasks/KotlinBuilder.kt",
+  "src/main/kotlin/io/bazel/kotlin/builder/tasks/PluginsPayloadParser.kt",
+  "src/main/kotlin/io/bazel/kotlin/builder/tasks/BtapiRuntime.kt",
+  "src/main/kotlin/io/bazel/kotlin/builder/tasks/jvm/TaskArtifacts.kt",
+  "src/main/kotlin/io/bazel/kotlin/builder/tasks/jvm/btapi/BtapiTaskExecutor.kt",
+  "src/main/kotlin/io/bazel/kotlin/builder/cmd/Build.kt",
+  "src/main/kotlin/io/bazel/kotlin/builder/toolchain/CompilationTaskContext.kt",
+  "src/main/kotlin/io/bazel/kotlin/builder/tasks/BUILD.bazel",
+  "src/main/kotlin/io/bazel/kotlin/builder/toolchain/BUILD.bazel",
+  "src/main/kotlin/io/bazel/kotlin/builder/cmd/BUILD.bazel",
+  "src/main/kotlin/io/bazel/kotlin/builder/utils/BUILD.bazel",
+  "src/main/protobuf/BUILD",
+  "src/main/protobuf/kotlin_model.proto",
+  "src/test/kotlin/io/bazel/kotlin/builder/KotlinAbstractTestBuilder.java",
+  "src/test/kotlin/io/bazel/kotlin/builder/KotlinJvmTestBuilder.java",
+  "src/test/kotlin/io/bazel/kotlin/builder/BUILD",
+  "src/test/kotlin/io/bazel/kotlin/builder/tasks/BtapiRuntimeFlagsValidationTest.kt",
+  "src/test/kotlin/io/bazel/kotlin/builder/tasks/BtapiRuntimeDigestTest.kt",
+  "src/test/kotlin/io/bazel/kotlin/builder/tasks/PluginsPayloadParserTest.kt",
+]
+description = """
+skill: java-dev (Kotlin construction flip + Java test-harness rewrite dominate) + bazel-dev for BUILD/proto deletion
+repo_path: /Users/restingbull/Workspaces/rules_kotlin/.claude/worktrees/refactor-jvmtask-kotlinic
+design-ref: /Users/restingbull/Workspaces/rules_kotlin/.claude/worktrees/refactor-jvmtask-kotlinic/.beads/designs/design-jvmcompilationtask-deproto.design.toml
+
+GOAL (DDD segment: the construction/dispatch/wiring flip — domain events TaskInfoParsed [KotlinBuilder] + SourceJarsExpanded [TaskArtifacts .copy()]). This is ONE ATOMIC step by physical necessity: the 5 top-level FQNs (JvmCompilationTask, CompilationTaskInfo, KotlinToolchainInfo, Platform, RuleKind) collide between generated proto and the step-1 data classes, so the BUILD dep swap + every write/construction site + the proto deletion + the Java test-harness rewrite MUST land in one commit or the tree will not compile. It CANNOT be split into smaller green beads (any partial state has two classes with one FQN on the classpath, or missing symbols). Pure READ-ONLY consumers are intentionally NOT in this diff — step-1 named accessors with the `List` suffix so CompilationTask.kt, PluginArgs.kt, JacocoInstrumentation.kt, KotlinJvmTaskExecutor.kt, JvmTaskExecutor.kt, TaskUtils.kt compile unchanged.
+
+apis / edits:
+  BUILD graph:
+    - Add dep //src/main/kotlin/io/bazel/kotlin/model:model to: builder/cmd:build_lib, builder/tasks, builder/toolchain, builder/utils (and the model :payload target if step-2 split it, wherever PluginsPayloadParser resolves).
+    - Remove //src/main/protobuf:kotlin_model_java_proto from ALL FOUR: cmd/BUILD.bazel, tasks/BUILD.bazel, toolchain/BUILD.bazel, utils/BUILD.bazel.
+    - Remove @com_google_protobuf//:protobuf_java_util from tasks, toolchain, utils (JsonFormat gone).
+    - KEEP @com_google_protobuf//:protobuf_java + //src/main/protobuf:deps_java_proto in tasks and utils (jdeps/deps.proto stays).
+    - Remove @com_google_protobuf//:protobuf_java from cmd:build_lib (success criterion: build_lib has no protobuf_java direct/transitive via kotlin_model path).
+    - src/main/protobuf/BUILD: delete proto_library(kotlin_model_proto) + java_proto_library(kotlin_model_java_proto) + their export from the :protobuf java_library; KEEP deps_proto/deps_java_proto. Delete the file src/main/protobuf/kotlin_model.proto.
+  KotlinBuilder.kt (TaskInfoParsed; sole construction site, ~389 lines): replace CompilationTaskInfo.newBuilder()/addAllDebug/addAllPassthroughFlags/addAllFriendPaths, toolchainInfoBuilder.commonBuilder, btapiBuilder.apply{addAll...}, JvmCompilationTask.newBuilder()/outputsBuilder/directoriesBuilder/inputsBuilder.addAll.../infoBuilder/root.build() with DIRECT data-class constructors (model classes from step-1). Platform.valueOf/RuleKind.valueOf -> Platform.fromName/RuleKind.fromName. JvmCompilationTask.Inputs.PluginPhase.PLUGIN_PHASE_STUBS/COMPILE -> model PluginPhase. Build btapi as BtapiRuntime? (null when absent) — this replaces hasBtapi() construction.
+  PluginsPayloadParser.kt: replace JvmCompilationTask.Inputs.newBuilder() + JsonFormat.parser().ignoringUnknownFields().merge(json, inputs) with PluginsPayloadJson.parse(json) from step-2; return List<Plugin> (model). Drop com.google.protobuf imports.
+  TaskArtifacts.kt (SourceJarsExpanded): replace task.toBuilder()...inputsBuilder.addKotlinSources/addJavaSources rebuild (~L212-218) with task.copy(inputs = task.inputs.copy(kotlinSourcesList = ..., javaSourcesList = ...)). All other reads unchanged (List accessors). Keep Directories.stubs/incrementalData extension props pointing at model.Directories.
+  Build.kt: task.info.toolchainInfo.hasBtapi() -> task.info.toolchainInfo.btapi != null.
+  BtapiTaskExecutor.kt: require(hasBtapi()) -> require(task.info.toolchainInfo.btapi != null); task.info.toolchainInfo.btapi.toRuntime() -> model btapi via BtapiRuntime.kt toRuntime(); nested JvmCompilationTask.Inputs.PluginPhase.PLUGIN_PHASE_STUBS/COMPILE (BtapiTaskExecutor.kt ~L206,290) -> top-level model PluginPhase.
+  TEST SOURCES — IMPORTANT: FQN non-collision (nested $-types) does NOT mean no source edit. The nested proto spellings vanish and hasBtapi()/non-null btapi change, so these test files MUST be edited or the step-3 GREEN gate (//src/test/.../builder/...) stays red:
+    - src/test/kotlin/io/bazel/kotlin/builder/BUILD: swap dep //src/main/protobuf:kotlin_model_java_proto -> //src/main/kotlin/io/bazel/kotlin/model:model (deleting the proto label breaks this load).
+    - BtapiRuntimeFlagsValidationTest.kt (~L90): task.info.toolchainInfo.hasBtapi() -> task.info.toolchainInfo.btapi != null (this is the design's named must-stay-green test).
+    - BtapiRuntimeDigestTest.kt (~L150,157,163): .info.toolchainInfo.btapi is now nullable BtapiRuntime? -> add ?./!! for field reads (.classpathFingerprint / .toRuntime()).
+    - PluginsPayloadParserTest.kt (~L20 import, L58-59): nested JvmCompilationTask.Inputs.PluginPhase.PLUGIN_PHASE_* -> top-level model PluginPhase; adjust parse() return type to List<Plugin>. Its 4 behavioral pins (well-formed, unknown-key ignore, silent-drop-unknown-phase, malformed-reject) are already ported to step-2 model/PluginsPayloadTest.kt — TRIM the duplicated pins here, keeping only a thin consumer-level delegation assertion that PluginsPayloadParser.parse routes through PluginsPayloadJson.parse. Do not keep full duplicate coverage.
+  BtapiRuntime.kt: fun KotlinToolchainInfo.BtapiRuntime.toRuntime() receiver -> model.BtapiRuntime (now top-level or nested per step-1); field reads use List accessors.
+  CompilationTaskContext.kt: printProto(header, msg: MessageOrBuilder) using TextFormat.printer().printToString(msg) -> a toString()-based dump of the data class (data class toString is adequate; drop com.google.protobuf.{MessageOrBuilder,TextFormat} imports). Update call site KotlinBuilder.kt (~L198-200) printProto("jvm task message:", task).
+  Java test harness (the riskiest surface — heavily used by ALL builder tests):
+    - KotlinAbstractTestBuilder.java: remove the <T extends JvmCompilationTaskOrBuilder> generic bound (no OrBuilder exists for data classes); rework construction to build model CompilationTaskInfo/KotlinToolchainInfo directly (constructors / .copy()).
+    - KotlinJvmTestBuilder.java: replace JvmCompilationTask.newBuilder()/.clear()/getInputsBuilder()/getDirectoriesBuilder()/getOutputsBuilder()/getInfoBuilder()/getToolchainInfoBuilder()/setBtapi(...)/KotlinToolchainInfo.BtapiRuntime.newBuilder() with model data-class construction + .copy(); task.getInfo()/getOutputs()/getInputs() -> property reads. Preserve the exact fixtures the tests rely on (btapiRuntimeForTest(), classpaths, dirs, outputs).
+
+do:
+  1. Read the current bodies of all affected files + both Java harness files to map every proto call to its data-class replacement.
+  2. ✗ Before editing: confirm the baseline is green (mcp__bazel__test on the builder test suite) so regressions are attributable. Then begin the atomic edit; interim compile failures are EXPECTED mid-edit (same-FQN) and are resolved only when ALL edits + BUILD swap + proto deletion are complete.
+  3. Apply ALL edits above in one working-tree change: BUILD deps (4 main targets), proto/BUILD deletion + kotlin_model.proto deletion, KotlinBuilder construction flip, PluginsPayloadParser, TaskArtifacts .copy(), Build.kt + BtapiTaskExecutor btapi!=null, BtapiRuntime.kt receiver, CompilationTaskContext toString dump, Java harness rewrite.
+  3b. In the SAME change, edit the in-blast-radius TEST sources (see TEST SOURCES note): builder/BUILD dep swap; BtapiRuntimeFlagsValidationTest.kt hasBtapi()->btapi!=null; BtapiRuntimeDigestTest.kt nullable btapi; PluginsPayloadParserTest.kt nested->top-level PluginPhase + trim pins duplicated by step-2.
+  4. ✓ GREEN gate: mcp__bazel__build(["//src/main/kotlin/io/bazel/kotlin/builder/cmd:build"]) exit 0 AND mcp__bazel__test(["//src/test/kotlin/io/bazel/kotlin/builder/..."]) exit 0 — covers builder + Btapi + PluginsPayload + jdeps tests via the harness. Re-run step-1/step-2 model tests to confirm still green.
+  5. Verify success criteria: build_lib has no kotlin_model_java_proto / protobuf_java (inspect src/main/kotlin/io/bazel/kotlin/builder/cmd/BUILD.bazel); kotlin_model.proto is deleted; deps.proto/jdeps targets untouched and jdeps tests (JdepsParserTest/JdepsMergerTest) green; io.bazel.worker untouched.
+  6. mcp__git__git(["add","-A"], repo_path:"/Users/restingbull/Workspaces/rules_kotlin/.claude/worktrees/refactor-jvmtask-kotlinic")
+     + mcp__git__git(["commit","-m","refactor(builder): swap kotlin_model proto for Kotlin data classes; drop kotlin_model_java_proto + protobuf_java_util; delete kotlin_model.proto"], repo_path:"/Users/restingbull/Workspaces/rules_kotlin/.claude/worktrees/refactor-jvmtask-kotlinic")
+
+verify: mcp__bazel__build(["//src/main/kotlin/io/bazel/kotlin/builder/cmd:build"]) exit 0 AND mcp__bazel__test(["//src/test/kotlin/io/bazel/kotlin/builder/..."]) exit 0
+
+constraints:
+  - ATOMIC: all edits + BUILD swap + proto deletion + harness rewrite in ONE commit; same-FQN forbids a smaller green intermediate.
+  - DO NOT touch deps.proto / deps_java_proto / JdepsMerger / JdepsParser / JDepsGenerator / the reduced-classpath Deps.Dependencies.parseFrom branches (CompilationTask.kt L50-63, BtapiTaskExecutor.kt L432-452) — jdeps stays on protobuf_java.
+  - DO NOT touch io.bazel.worker (worker_protocol stays).
+  - Pure-read consumers (CompilationTask.kt, PluginArgs.kt, JacocoInstrumentation.kt, KotlinJvmTaskExecutor.kt, JvmTaskExecutor.kt, TaskUtils.kt) should need NO edits thanks to List-suffixed accessors; if any does, that is a step-1 accessor-naming miss — fix the model accessor, not the consumer.
+  - BTAPI dispatch via btapi != null MUST be behaviorally identical to the old hasBtapi() (BtapiRuntimeFlagsValidationTest must stay green).
+  - Output-emission gates (outputs.*.isNotEmpty()) unchanged (preserved by "" defaults).
+  - git ONLY via mcp__git__git; bazel ONLY via mcp__bazel__*.
+
+affects: src/main/kotlin/io/bazel/kotlin/builder/tasks/KotlinBuilder.kt, src/main/kotlin/io/bazel/kotlin/builder/tasks/PluginsPayloadParser.kt, src/main/kotlin/io/bazel/kotlin/builder/tasks/BtapiRuntime.kt, src/main/kotlin/io/bazel/kotlin/builder/tasks/jvm/TaskArtifacts.kt, src/main/kotlin/io/bazel/kotlin/builder/tasks/jvm/btapi/BtapiTaskExecutor.kt, src/main/kotlin/io/bazel/kotlin/builder/cmd/Build.kt, src/main/kotlin/io/bazel/kotlin/builder/toolchain/CompilationTaskContext.kt, src/main/kotlin/io/bazel/kotlin/builder/tasks/BUILD.bazel, src/main/kotlin/io/bazel/kotlin/builder/toolchain/BUILD.bazel, src/main/kotlin/io/bazel/kotlin/builder/cmd/BUILD.bazel, src/main/kotlin/io/bazel/kotlin/builder/utils/BUILD.bazel, src/main/protobuf/BUILD, src/main/protobuf/kotlin_model.proto, src/test/kotlin/io/bazel/kotlin/builder/KotlinAbstractTestBuilder.java, src/test/kotlin/io/bazel/kotlin/builder/KotlinJvmTestBuilder.java, src/test/kotlin/io/bazel/kotlin/builder/BUILD, src/test/kotlin/io/bazel/kotlin/builder/tasks/BtapiRuntimeFlagsValidationTest.kt, src/test/kotlin/io/bazel/kotlin/builder/tasks/BtapiRuntimeDigestTest.kt, src/test/kotlin/io/bazel/kotlin/builder/tasks/PluginsPayloadParserTest.kt
+"""

@@ -1,0 +1,260 @@
+updated = "2026-10-02"
+at_commit = "4f50962"
+
+# ─── Bounded Contexts ───────────────────────────────────────────────
+
+[[bounded_contexts]]
+name = "Starlark Rules Layer"
+subdomain = "supporting"
+purpose = "Defines user-facing kt_jvm_*/kt_android_* rules, providers and toolchains that translate Bazel targets into worker WorkRequests and action graphs."
+upstream = []
+downstream = ["Worker Protocol", "JVM Compilation", "Proto Model", "Toolchain & Compiler Adapters"]
+
+[[bounded_contexts]]
+name = "JVM Compilation"
+subdomain = "core"
+purpose = "The Kotlin-to-JVM compilation pipeline that drives the compiler, runs plugins, and produces class/ABI/jdeps/generated jars from a JvmCompilationTask."
+upstream = ["Worker Protocol", "Starlark Rules Layer", "Proto Model"]
+downstream = ["Toolchain & Compiler Adapters", "Compiler Plugins (Jdeps/ABI)", "Annotation Processing (KAPT/KSP)"]
+
+[[bounded_contexts]]
+name = "Toolchain & Compiler Adapters"
+subdomain = "supporting"
+purpose = "Wraps and isolates the Kotlin compiler (legacy K2JVMCompiler and Build Tools API) behind stable invoker interfaces and loads plugin/compiler classpaths in classloader order."
+upstream = ["JVM Compilation"]
+downstream = []
+
+[[bounded_contexts]]
+name = "Compiler Plugins (Jdeps/ABI)"
+subdomain = "core"
+purpose = "In-compiler Kotlin plugins that record class usage to emit jdeps dependency reports, generate ABI jars, and skip code generation for ABI-only builds."
+upstream = ["JVM Compilation"]
+downstream = ["Proto Model"]
+
+[[bounded_contexts]]
+name = "Annotation Processing (KAPT/KSP)"
+subdomain = "supporting"
+purpose = "Runs KAPT and KSP2 processors in-worker, expanding generated Java/Kotlin sources and classes back into the compilation inputs."
+upstream = ["JVM Compilation"]
+downstream = ["Toolchain & Compiler Adapters"]
+
+[[bounded_contexts]]
+name = "Worker Protocol"
+subdomain = "generic"
+purpose = "Bazel persistent/one-shot worker plumbing: parses WorkRequests, manages per-request working-directory contexts and logging, returns WorkResponses."
+upstream = ["Starlark Rules Layer"]
+downstream = ["JVM Compilation"]
+
+[[bounded_contexts]]
+name = "Proto Model"
+subdomain = "supporting"
+purpose = "Protobuf-defined contracts. kotlin_model (JvmCompilationTask et al.) is in-process builder state assembled from worker flags; deps.proto (Dependencies/jdeps) is a real on-disk serialization format."
+upstream = []
+downstream = ["JVM Compilation", "Compiler Plugins (Jdeps/ABI)", "Starlark Rules Layer"]
+
+# ─── Ubiquitous Language ────────────────────────────────────────────
+
+[[ubiquitous_language]]
+term = "JvmCompilationTask"
+definition = "The root aggregate describing one JVM compile action: info, directories, inputs, outputs, and flags (compile_kotlin, instrument_coverage). Currently a protobuf message; assembled in-process from worker flags, never serialized across a boundary."
+context = "Proto Model"
+
+[[ubiquitous_language]]
+term = "CompilationTaskInfo"
+definition = "Shared per-task metadata: target label, platform, rule kind, module name, toolchain info, friend paths, strict-deps and reduced-classpath settings, and ABI-jar options."
+context = "Proto Model"
+
+[[ubiquitous_language]]
+term = "KotlinToolchainInfo"
+definition = "Toolchain configuration (language/api version, coroutines, jvm_target) plus optional BtapiRuntime that signals Build Tools API compilation."
+context = "Proto Model"
+
+[[ubiquitous_language]]
+term = "BtapiRuntime"
+definition = "The Build Tools API compilation runtime bundle (api_impl_classpath, jvm_abi_gen, skip_code_gen, kapt, jdeps_gen classpaths) plus a classpath_fingerprint; its presence tells the worker to compile via BTAPI."
+context = "Proto Model"
+
+[[ubiquitous_language]]
+term = "KotlinBuilder"
+definition = "The builder entry point that parses --flagfile params into an ArgMap and CompilationTaskInfo and dispatches JVM tasks."
+context = "JVM Compilation"
+
+[[ubiquitous_language]]
+term = "KotlinJvmTaskExecutor"
+definition = "Orchestrates the legacy-compiler pipeline: pre-processing, plugin runs, kotlinc invocation, then jar/abijar/jdeps/generated-jar creation."
+context = "JVM Compilation"
+
+[[ubiquitous_language]]
+term = "BtapiTaskExecutor"
+definition = "Alternate executor that compiles through the Build Tools API, enabling incremental compilation and caching of compiler invokers per classpath."
+context = "JVM Compilation"
+
+[[ubiquitous_language]]
+term = "CompilationArgs"
+definition = "A builder for ordered compiler command-line arguments (flags, plugins, classpaths) assembled from the task."
+context = "JVM Compilation"
+
+[[ubiquitous_language]]
+term = "CompilationTaskContext"
+definition = "Execution scope that times/labels sub-steps ('compile classes', 'kotlinc', 'create jar') and captures compiler output for logging."
+context = "JVM Compilation"
+
+[[ubiquitous_language]]
+term = "KotlinToolchain"
+definition = "Holds compiler plugin descriptors (jvmAbiGen, jdepsGen, skipCodeGen, KAPT) and constructs the KotlincInvoker used to run the compiler."
+context = "Toolchain & Compiler Adapters"
+
+[[ubiquitous_language]]
+term = "Build Tools API (BTAPI)"
+definition = "JetBrains' CompilationService API path, loaded reflectively via BtapiInvoker across a dedicated classloader to support incremental builds."
+context = "Toolchain & Compiler Adapters"
+
+[[ubiquitous_language]]
+term = "Jdeps"
+definition = "A Dependencies protobuf report of used/unused direct and implicit dependencies emitted per compilation for strict-deps enforcement. Serialized on disk (deps.proto)."
+context = "Compiler Plugins (Jdeps/ABI)"
+
+[[ubiquitous_language]]
+term = "ABI jar"
+definition = "An ABI-only jar produced by the jvm-abi-gen plugin, optionally stripping private/internal declarations, debug info, and preserving declaration order for stable header compilation."
+context = "Compiler Plugins (Jdeps/ABI)"
+
+[[ubiquitous_language]]
+term = "Strict Kotlin deps"
+definition = "Policy (off/warn/error) that fails or warns when sources use transitive deps not declared as direct dependencies, enforced via jdeps analysis."
+context = "Compiler Plugins (Jdeps/ABI)"
+
+[[ubiquitous_language]]
+term = "Reduced classpath mode"
+definition = "Optimization that trims the compile classpath to only required dependencies, with a requires_reduced_classpath_fallback signal when the trimmed build fails."
+context = "JVM Compilation"
+
+[[ubiquitous_language]]
+term = "KAPT"
+definition = "Kotlin Annotation Processing: a stubs+apt plugin phase that generates Java sources/classes, packaged into generated_java_src/stub/class jars."
+context = "Annotation Processing (KAPT/KSP)"
+
+[[ubiquitous_language]]
+term = "KSP2"
+definition = "Kotlin Symbol Processing v2 run in-worker via Ksp2Invoker, producing generated KSP source and class jars, with per-processor-classpath classloader caching."
+context = "Annotation Processing (KAPT/KSP)"
+
+[[ubiquitous_language]]
+term = "Worker / WorkRequest"
+definition = "Bazel's persistent-worker protocol unit carrying arguments and input digests; handled by PersistentWorker (multiplex) or InvocationWorker (one-shot)."
+context = "Worker Protocol"
+
+[[ubiquitous_language]]
+term = "treat_internal_as_private_in_abi_jar"
+definition = "ABI flag marking Kotlin `internal` declarations as private so they are excluded from the generated abi.jar."
+context = "Proto Model"
+
+# ─── Aggregates ─────────────────────────────────────────────────────
+
+[[aggregates]]
+name = "JvmCompilationTask"
+context = "JVM Compilation"
+invariants = [
+  "An ABI jar is only emitted when outputs.abijar is set; when no full jar is requested the SkipCodeGen plugin must suppress bytecode.",
+  "Jdeps output is written for every compile (empty jdeps for the label when no Kotlin is compiled), keeping the dependency report consistent with the jar.",
+  "Declared inputs (classpath, direct_dependencies, sources) must be self-consistent: sources augmented by source_jar/annotation-processing expansion still reference only the task's directories.",
+  "Exactly one compiler path is chosen per task: BTAPI when toolchain_info.btapi is present, otherwise the legacy KotlincInvoker.",
+  "Outputs declared (jar/abijar/jdeps/generated jars) must each be produced when their path is non-empty, and only then.",
+]
+
+[[aggregates]]
+name = "KotlinToolchain"
+context = "Toolchain & Compiler Adapters"
+invariants = [
+  "Compiler and plugin classpaths are loaded in a fixed classloader order so plugin dialects match the selected compiler.",
+  "Each CompilerPlugin binds a jar to exactly one stable compiler plugin id (jvm-abi-gen, JDepsGen, SkipCodeGen, KAPT).",
+  "A KotlincInvoker is constructed from the toolchain and is the sole gateway to the underlying compiler's exec entry point.",
+]
+
+[[aggregates]]
+name = "WorkerContext / TaskContext"
+context = "Worker Protocol"
+invariants = [
+  "Each WorkRequest executes in its own isolated working directory that is cleaned up on close.",
+  "Every task resolves to exactly one Status, and all captured log output is flushed into the resulting TaskResult/WorkResponse.",
+  "Request-scoped loggers never leak output across concurrent multiplex requests.",
+]
+
+[[aggregates]]
+name = "Ksp2 / KAPT processing unit"
+context = "Annotation Processing (KAPT/KSP)"
+invariants = [
+  "Generated sources and classes are emitted only into the task's designated generated_* directories and packaged into their matching output jars.",
+  "A processor classloader is cached and reused per sorted processor classpath to bound memory in multiplex workers.",
+  "Processing runs before the final Kotlin compile so generated sources are included as compilation inputs.",
+]
+
+# ─── Domain Events ──────────────────────────────────────────────────
+
+[[domain_events]]
+name = "CompilationRequested"
+context = "Worker Protocol"
+
+[[domain_events]]
+name = "WorkRequestReceived"
+context = "Worker Protocol"
+
+[[domain_events]]
+name = "TaskInfoParsed"
+context = "JVM Compilation"
+
+[[domain_events]]
+name = "SourceJarsExpanded"
+context = "JVM Compilation"
+
+[[domain_events]]
+name = "StubsGenerated"
+context = "Annotation Processing (KAPT/KSP)"
+
+[[domain_events]]
+name = "AnnotationsProcessed"
+context = "Annotation Processing (KAPT/KSP)"
+
+[[domain_events]]
+name = "KspSourcesGenerated"
+context = "Annotation Processing (KAPT/KSP)"
+
+[[domain_events]]
+name = "SourcesCompiled"
+context = "JVM Compilation"
+
+[[domain_events]]
+name = "OutputJarCreated"
+context = "JVM Compilation"
+
+[[domain_events]]
+name = "AbiJarGenerated"
+context = "Compiler Plugins (Jdeps/ABI)"
+
+[[domain_events]]
+name = "JdepsGenerated"
+context = "Compiler Plugins (Jdeps/ABI)"
+
+[[domain_events]]
+name = "JdepsMerged"
+context = "Compiler Plugins (Jdeps/ABI)"
+
+[[domain_events]]
+name = "StrictDepsViolationDetected"
+context = "Compiler Plugins (Jdeps/ABI)"
+
+[[domain_events]]
+name = "ReducedClasspathFallbackRequested"
+context = "JVM Compilation"
+
+[[domain_events]]
+name = "CoverageInstrumented"
+context = "JVM Compilation"
+
+[[domain_events]]
+name = "CompilationFailed"
+context = "JVM Compilation"
+
+[[domain_events]]
+name = "WorkResponseReturned"
+context = "Worker Protocol"

@@ -1,0 +1,85 @@
+slug = "design-jvmcompilationtask-deproto"
+kind = "design"
+title = "De-proto JvmCompilationTask: convert kotlin_model to Kotlin data classes"
+status = "approved"
+created = "2026-10-03"
+at_commit = "4f50962"
+
+rationale = """
+The kotlin_model protobuf (JvmCompilationTask + CompilationTaskInfo + KotlinToolchainInfo/BtapiRuntime
++ Directories/Outputs/Inputs/Plugin/PluginOption + Platform/RuleKind/PluginPhase enums) is pure
+in-process state: it is assembled from worker flag strings in KotlinBuilder and consumed in tasks/ +
+toolchain/, but is NEVER serialized across any boundary. The proto therefore buys nothing while
+forcing a protobuf_java/kotlin_model_java_proto dependency onto build_lib (transitively via tasks +
+toolchain) and spreading builder/hasX()/empty-string-as-absent idioms through the core compilation
+pipeline. Converting it to plain Kotlin data classes removes the dependency and simplifies the builder.
+
+Two protos genuinely cross boundaries and STAY: deps.proto (bazel jdeps Dependencies, parseFrom/writeTo
+on .jdeps files in JdepsMerger/JdepsParser/JDepsGenerator and the reduced-classpath branch) keeps
+protobuf_java in the tasks target; bazel worker_protocol stays in io.bazel.worker. Note: the
+io.bazel.worker PACKAGE already has zero kotlin_model dependency today, so the user's phrase 'only
+worker should need proto support' resolves to 'proto never crosses the build worker's wire boundary',
+which full deletion satisfies.
+
+Decisions:
+A. SCOPE = full deletion. Convert all nested types to Kotlin data classes/enums; remove
+   kotlin_model_java_proto from build_lib + tasks + toolchain; delete kotlin_model.proto.
+B. ABSENCE = hybrid. Preserve proto3 ""/emptyList semantics for output/input gates
+   (outputs.*.isNotEmpty() etc.) to minimize call-site churn; model the load-bearing BTAPI dispatch
+   as a nullable BtapiRuntime? replacing hasBtapi() (btapi != null).
+C. PLUGINS PAYLOAD = kotlinx.serialization. Annotate the payload shape @Serializable; wire the
+   kotlinx serialization compiler plugin + kotlinx-serialization-json runtime into the bootstrap
+   target owning PluginsPayloadParser. Drops protobuf_java_util/JsonFormat from tasks.
+D. TYPE LOCATION = same FQNs. New pure-Kotlin target //src/main/kotlin/io/bazel/kotlin/model in
+   package io.bazel.kotlin.model with identical type names; existing imports unchanged.
+"""
+
+constraints = [
+  "kotlin_model proto is never serialized — purely in-process state assembled from worker flags.",
+  "build_lib depends on kotlin_model_java_proto + protobuf_java TRANSITIVELY via tasks + toolchain; removing from build_lib's own deps list is insufficient — tasks + toolchain must also stop using it.",
+  "deps.proto (jdeps Dependencies) is a real on-disk serialization format in tasks/jvm and keeps protobuf_java in the tasks target; it is unrelated to kotlin_model and must NOT be removed.",
+  "bazel worker_protocol proto stays in io.bazel.worker; that package already has zero kotlin_model dependency.",
+  "hasBtapi() presence check is load-bearing legacy-vs-BTAPI dispatch (Build.kt dispatcher + BtapiTaskExecutor require precondition) — must become an explicit nullable BtapiRuntime? discriminator.",
+  "proto3 empty-string/empty-list-as-absent is used pervasively to gate optional output steps (outputs.jar.isNotEmpty(), etc.) — keep String default '' / emptyList to avoid changing emission invariants.",
+  "TaskArtifacts uses task.toBuilder() to rebuild the task mid-pipeline after source-jar/KAPT expansion — must become data-class .copy().",
+  "PluginsPayloadParser parses a fixed JSON schema {plugins:[{classpath:[],id,options:[{key,value}],phases:[PLUGIN_PHASE_*]}]} produced by Starlark payload.bzl; no JSON lib is on the bootstrap classpath today.",
+  "CompilationTaskContext.printProto uses TextFormat for a --kotlin_debug_tags=trace debug dump — needs a toString()-based replacement.",
+  "Platform/RuleKind/PluginPhase are parsed via enum valueOf with explicit UNRECOGNIZED handling in KotlinBuilder — Kotlin enums must preserve that parse + fallback behavior.",
+  "KotlinBuilder.kt is the single ~389-line construction site for both CompilationTaskInfo and JvmCompilationTask; flip construction there last so the tree stays green during migration.",
+  "Bootstrap constraint: data classes compile under kt_bootstrap_library against KOTLIN_STDLIBS; the kotlinx.serialization choice requires adding the serialization compiler plugin + runtime to the owning bootstrap target.",
+]
+
+rejected = [
+  { option = "Boundary-only data classes (keep proto inside tasks/toolchain)", reason = "build_lib would still pull kotlin_model_java_proto transitively — the stated goal is not met." },
+  { option = "Fully idiomatic nullable for every field", reason = "Touches every isNotEmpty() gate site and risks subtly changing output-emission invariants; higher churn + risk than the hybrid." },
+  { option = "Hand-written JSON parser for plugins payload", reason = "User chose kotlinx.serialization for a typed @Serializable shape over a bespoke parser." },
+  { option = "Keep JsonFormat for the payload only", reason = "Retains protobuf_java_util + a kotlin_model proto shape in tasks, undercutting full deletion." },
+  { option = "New distinct package (io.bazel.kotlin.builder.model)", reason = "Forces import edits across ~13 consumer files and creates a transient name clash with the generated class during migration; same-FQN swap is cleaner." },
+]
+
+success_criteria = [
+  "//src/main/kotlin/io/bazel/kotlin/builder/cmd:build_lib has no dependency on //src/main/protobuf:kotlin_model_java_proto or @com_google_protobuf//:protobuf_java (direct or transitive).",
+  "kotlin_model_java_proto removed from build_lib, tasks, and toolchain BUILD targets; src/main/protobuf/kotlin_model.proto deleted.",
+  "deps.proto/jdeps handling (JdepsMerger/JdepsParser/JDepsGenerator + reduced-classpath branch) and io.bazel.worker worker_protocol are unchanged and still compile.",
+  "New //src/main/kotlin/io/bazel/kotlin/model target provides io.bazel.kotlin.model.JvmCompilationTask (+ nested types/enums) as Kotlin data classes; consumer imports unchanged.",
+  "BTAPI-vs-legacy dispatch driven by nullable BtapiRuntime? (btapi != null) with behavior identical to hasBtapi().",
+  "bazel build //src/main/kotlin/io/bazel/kotlin/builder/cmd:build and existing builder + Btapi + PluginsPayload tests pass green.",
+]
+
+designs_components = [
+  "rules_kotlin/JvmCompilationTask",
+  "rules_kotlin/CompilationTaskInfo",
+  "rules_kotlin/KotlinToolchainInfo",
+  "rules_kotlin/BtapiRuntime",
+  "rules_kotlin/KotlinBuilder",
+  "rules_kotlin/PluginsPayloadParser",
+  "rules_kotlin/TaskArtifacts",
+  "rules_kotlin/CompilationTaskContext",
+]
+
+# DDD intent
+ddd_ref = ".beads/ddd/model.toml"
+ddd_bounded_context = "Proto Model"
+ddd_subdomain = "supporting"
+ddd_aggregates = ["JvmCompilationTask", "KotlinToolchain"]
+ddd_domain_events = ["TaskInfoParsed", "SourceJarsExpanded"]

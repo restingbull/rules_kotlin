@@ -1,56 +1,22 @@
 package io.bazel.kotlin.test
 
-
-import io.bazel.kotlin.builder.utils.BazelRunFiles
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
-import java.io.BufferedInputStream
-import java.io.ByteArrayOutputStream
-import java.io.InputStream
-import java.io.OutputStream
+import org.junit.Test
 import java.nio.charset.StandardCharsets.UTF_8
-import java.nio.file.FileSystems
-import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.Callable
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import java.util.function.Predicate
-import java.util.zip.GZIPInputStream
-import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
-import kotlin.io.path.inputStream
 
-object BazelIntegrationTestRunner {
-  @JvmStatic
-  fun main(args: Array<String>) {
+private fun nullBazelRcPath() =
+  if (System.getProperty("os.name").lowercase().contains("windows")) "NUL" else "/dev/null"
+
+class BazelIntegrationTestRunner : BazelIntegrationTestBase() {
+  @Test
+  fun exampleBuildsAndTests() {
     val isWindows = System.getProperty("os.name").lowercase().contains("windows")
-    val fs = FileSystems.getDefault()
-    val bazel = fs.getPath(System.getenv("BIT_BAZEL_BINARY"))
-    val workspace = fs.getPath(System.getenv("BIT_WORKSPACE_DIR"))
-    val unpack = fs.getPath(System.getenv("TEST_TMPDIR")).resolve("rules_kotlin")
-    val release = BazelRunFiles.resolveVerifiedFromProperty(
-      fs,
-      "@rules_kotlin...rules_kotlin_release",
+    val workspace = Path.of(env("BIT_WORKSPACE_DIR"))
+    val unpack = unpackRelease(
+      requireNotNull(System.getProperty("@rules_kotlin...rules_kotlin_release")),
     )
-
-    TarArchiveInputStream(
-      GZIPInputStream(
-        release.inputStream(),
-      ),
-    ).use { stream ->
-      generateSequence(stream::getNextEntry).forEach { entry ->
-        val destination = unpack.resolve(entry.name)
-        when {
-          entry.isDirectory -> destination.createDirectories()
-          entry.isFile -> Files.write(
-            destination.apply { parent.createDirectories() },
-            stream.readBytes(),
-          )
-
-          else -> throw NotImplementedError(entry.toString())
-        }
-      }
-    }
 
     val version = bazel.run(workspace, "--version").parseVersion()
 
@@ -184,8 +150,6 @@ object BazelIntegrationTestRunner {
         set.filter { it.condition.test(v) }.map { flag -> flag.value }.toTypedArray()
       }
   }
-  private fun nullBazelRcPath() =
-    if (System.getProperty("os.name").lowercase().contains("windows")) "NUL" else "/dev/null"
 
   sealed class Version : Comparable<Version> {
     companion object {
@@ -253,7 +217,7 @@ object BazelIntegrationTestRunner {
     }
   }
 
-  private val VERSION_REGEX = Regex("(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)([^.]*)")
+  private val versionRegex = Regex("(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)([^.]*)")
 
   private fun Result<ProcessResult>.parseVersion(): Version {
     ok { result ->
@@ -263,7 +227,7 @@ object BazelIntegrationTestRunner {
           if ("no_version" in line) {
             return Version.Head()
           }
-          VERSION_REGEX.find(line.trim())?.let { result ->
+          versionRegex.find(line.trim())?.let { result ->
             return Version.Known(
               major = result.groups["major"]?.value?.toInt() ?: 0,
               minor = result.groups["minor"]?.value?.toInt() ?: 0,
@@ -275,12 +239,6 @@ object BazelIntegrationTestRunner {
     }
   }
 
-  data class ProcessResult(
-    val exit: Int,
-    val stdOut: ByteArray,
-    val stdErr: ByteArray,
-  )
-
   private fun Result<ProcessResult>.onFailThrow() = onFailure {
     throw it
   }
@@ -290,58 +248,4 @@ object BazelIntegrationTestRunner {
     onFailure = { err -> throw err },
   )
 
-  fun Path.run(inDirectory: Path, vararg args: String): Result<ProcessResult> =
-    ProcessBuilder().command(this.toString(), *args).directory(inDirectory.toFile()).start()
-      .let { process ->
-        println("Running [${fileName} ${args.joinToString(" ")}]...")
-        val executor = Executors.newCachedThreadPool();
-        try {
-          val stdOut = executor.submit(process.inputStream.streamTo(System.out))
-          val stdErr = executor.submit(process.errorStream.streamTo(System.out))
-          if (process.waitFor(1500, TimeUnit.SECONDS) && process.exitValue() == 0) {
-            return Result.success(
-              ProcessResult(
-                exit = 0,
-                stdErr = stdErr.get(),
-                stdOut = stdOut.get(),
-              ),
-            )
-          }
-          process.destroyForcibly()
-          return Result.failure(
-            AssertionError(
-              """
-            $this ${args.joinToString(" ")} exited ${process.waitFor()}:
-            stdout:
-            ${stdOut.get().toString(UTF_8)}
-            stderr:
-            ${stdErr.get().toString(UTF_8)}
-          """.trimIndent(),
-            ),
-          )
-        } finally {
-          executor.shutdown();
-          executor.awaitTermination(1, TimeUnit.SECONDS);
-        }
-      }
-
-  private fun InputStream.streamTo(out: OutputStream): Callable<ByteArray> {
-    return Callable {
-      val result = ByteArrayOutputStream();
-      BufferedInputStream(this).apply {
-        val buffer = ByteArray(4096)
-        var read = 0
-        do {
-          if (Thread.currentThread().isInterrupted) {
-            out.flush()
-            break
-          }
-          result.write(buffer, 0, read);
-          out.write(buffer, 0, read)
-          read = read(buffer)
-        } while (read != -1)
-      }
-      return@Callable result.toByteArray()
-    }
-  }
 }

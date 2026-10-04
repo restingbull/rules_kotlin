@@ -1,0 +1,33 @@
+load("@bazel_binaries//:defs.bzl", "bazel_binaries")
+load("@rules_bazel_integration_test//bazel_integration_test:defs.bzl", "bazel_integration_test")
+load("//kotlin:jvm.bzl", "kt_jvm_test")
+
+kt_jvm_test(
+    name = "toolchain_loading_test_runner",
+    srcs = ["ToolchainLoadingTest.kt"],
+    # Run through bazel_integration_test, which supplies the Bazel launcher.
+    tags = ["manual"],
+    test_class = "io.bazel.kotlin.integration.ToolchainLoadingTest",
+    deps = [
+        "//src/main/kotlin/io/bazel/kotlin/test:test_base",
+        "@com_google_protobuf//:protobuf_java",
+        "@com_google_protobuf//:protobuf_java_util",
+        "@kotlin_rules_maven_test//:junit_junit",
+    ],
+)
+
+bazel_integration_test(
+    name = "toolchain_loading_test",
+    bazel_binaries = bazel_binaries,
+    bazel_version = bazel_binaries.versions.current,
+    data = ["//:rules_kotlin_release"],
+    env = {
+        "BAZEL_BINARY_RUNFILE": "$(rlocationpath %s)" % bazel_binaries.label(bazel_binaries.versions.current),
+        "RULES_KOTLIN_RELEASE": "$(rlocationpath //:rules_kotlin_release)",
+    },
+    tags = [
+        "no-remote",
+        "requires-network",
+    ],
+    test_runner = ":toolchain_loading_test_runner",
+)
