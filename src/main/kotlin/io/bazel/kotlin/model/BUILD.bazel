@@ -1,0 +1,26 @@
+load("//src/main/kotlin:bootstrap.bzl", "kt_bootstrap_library")
+
+kt_bootstrap_library(
+    name = "model",
+    srcs = ["Model.kt"],
+    visibility = ["//src:__subpackages__"],
+    deps = [],
+)
+
+# @Serializable plugins-payload DTO + parser. Compiled with the kotlinx serialization compiler
+# plugin threaded through the bootstrap compile path (-Xplugin). The serialization runtime jars
+# are passed as full (non-ijar) jars via compiler_plugin_runtime so the plugin's version check can
+# read the core version and so json/core are propagated to consumers at runtime. Kept separate
+# from :model so the core model stays plugin-free.
+kt_bootstrap_library(
+    name = "payload",
+    srcs = ["PluginsPayload.kt"],
+    compiler_plugin_classpath = ["//kotlin/compiler:kotlinx-serialization-compiler-plugin"],
+    compiler_plugin_id = "org.jetbrains.kotlin.serialization",
+    compiler_plugin_runtime = [
+        "@kotlinx_serialization_core_jvm//file",
+        "@kotlinx_serialization_json_jvm//file",
+    ],
+    visibility = ["//src:__subpackages__"],
+    deps = [":model"],
+)

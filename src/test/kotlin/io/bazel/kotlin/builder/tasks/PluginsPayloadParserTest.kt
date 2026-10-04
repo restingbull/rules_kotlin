@@ -17,16 +17,20 @@
 package io.bazel.kotlin.builder.tasks
 
 import com.google.common.truth.Truth.assertThat
-import io.bazel.kotlin.model.JvmCompilationTask
-import org.junit.Assert.fail
+import io.bazel.kotlin.model.PluginPhase
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
+/**
+ * The full plugins-payload parsing behavior (unknown-key/phase handling, malformed rejection,
+ * field defaults) is pinned by the model's PluginsPayloadTest. This only pins that the builder-side
+ * consumer routes a payload through that parser and hands back the mapped model plugins.
+ */
 @RunWith(JUnit4::class)
 class PluginsPayloadParserTest {
   @Test
-  fun `parses plugins payload json`() {
+  fun `routes a payload through the model parser`() {
     val plugins =
       PluginsPayloadParser.parse(
         """
@@ -35,10 +39,7 @@ class PluginsPayloadParserTest {
             {
               "id": "plugin.test",
               "classpath": ["a.jar", "b.jar"],
-              "options": [
-                {"key": "k1", "value": "v1"},
-                {"key": "k2", "value": "v2"}
-              ],
+              "options": [{"key": "k1", "value": "v1"}],
               "phases": ["PLUGIN_PHASE_COMPILE", "PLUGIN_PHASE_STUBS"]
             }
           ]
@@ -46,72 +47,12 @@ class PluginsPayloadParserTest {
         """.trimIndent(),
       )
 
-    assertThat(plugins).hasSize(1)
     val plugin = plugins.single()
     assertThat(plugin.id).isEqualTo("plugin.test")
     assertThat(plugin.classpathList).containsExactly("a.jar", "b.jar").inOrder()
-    assertThat(plugin.optionsList.map { "${it.key}=${it.value}" })
-      .containsExactly("k1=v1", "k2=v2")
-      .inOrder()
+    assertThat(plugin.optionsList.map { "${it.key}=${it.value}" }).containsExactly("k1=v1")
     assertThat(plugin.phasesList)
-      .containsExactly(
-        JvmCompilationTask.Inputs.PluginPhase.PLUGIN_PHASE_COMPILE,
-        JvmCompilationTask.Inputs.PluginPhase.PLUGIN_PHASE_STUBS,
-      )
+      .containsExactly(PluginPhase.PLUGIN_PHASE_COMPILE, PluginPhase.PLUGIN_PHASE_STUBS)
       .inOrder()
-  }
-
-  @Test
-  fun `ignores unknown json fields`() {
-    val plugins =
-      PluginsPayloadParser.parse(
-        """
-        {
-          "unknown_top_level": "ignored",
-          "plugins": [
-            {
-              "id": "plugin.unknown",
-              "classpath": [],
-              "options": [],
-              "phases": ["PLUGIN_PHASE_COMPILE"],
-              "unknown_nested": "ignored"
-            }
-          ]
-        }
-        """.trimIndent(),
-      )
-
-    assertThat(plugins).hasSize(1)
-    assertThat(plugins.single().id).isEqualTo("plugin.unknown")
-  }
-
-  @Test
-  fun `silently drops unknown phase enum names`() {
-    // JsonFormat's ignoringUnknownFields() also ignores unknown enum VALUES: an unrecognized
-    // phase name is dropped rather than rejected. Pinned so a protobuf behavior change (or a
-    // stricter parser) surfaces here instead of as a silent contract shift.
-    val plugins =
-      PluginsPayloadParser.parse(
-        """
-        {"plugins": [{"id": "p", "classpath": [], "options": [], "phases": ["PLUGIN_PHASE_BOGUS"]}]}
-        """.trimIndent(),
-      )
-
-    assertThat(plugins.single().phasesList).isEmpty()
-  }
-
-  @Test
-  fun `parses an empty payload object to no plugins`() {
-    assertThat(PluginsPayloadParser.parse("{}")).isEmpty()
-  }
-
-  @Test
-  fun `rejects invalid json`() {
-    try {
-      PluginsPayloadParser.parse("{invalid")
-      fail("Expected parse to fail")
-    } catch (e: IllegalArgumentException) {
-      assertThat(e).hasMessageThat().contains("invalid plugins payload JSON")
-    }
   }
 }

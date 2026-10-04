@@ -6,6 +6,10 @@ common --incompatible_disallow_empty_glob=false
 common --incompatible_disable_native_repo_rules=true
 common --incompatible_autoload_externally=
 
+# Resolve the module graph authoritatively from MODULE.bazel.lock with no
+# registry network access, so hermetic/sandboxed builds (e.g. codex) work offline.
+common --lockfile_mode=error
+
 common --java_runtime_version=remotejdk_17
 common --tool_java_runtime_version=remotejdk_17
 

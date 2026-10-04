@@ -18,7 +18,7 @@ load("//kotlin:lint.bzl", _ktlint_fix = "ktlint_fix", _ktlint_test = "ktlint_tes
 load("//src/main/starlark/core/compile:rules.bzl", "core_kt_jvm_library")
 load("//third_party:jarjar.bzl", "jar_jar")
 
-def kt_bootstrap_library(name, deps = [], neverlink_deps = [], srcs = [], visibility = [], kotlinc_opts = [], **kwargs):
+def kt_bootstrap_library(name, deps = [], neverlink_deps = [], srcs = [], visibility = [], kotlinc_opts = [], compiler_plugin_classpath = [], compiler_plugin_id = "", compiler_plugin_options = [], compiler_plugin_runtime = [], **kwargs):
     """Simple compilation of a kotlin library using a non-persistent worker.
 
     The target is a JavaInfo provider.
@@ -30,6 +30,10 @@ def kt_bootstrap_library(name, deps = [], neverlink_deps = [], srcs = [], visibi
         srcs: Kotlin sources compiled into the library.
         visibility: the visibility of the library target.
         kotlinc_opts: the kotlinc options applied to the compilation.
+        compiler_plugin_classpath: optional compiler plugin jars loaded via -Xplugin (forwarded only to the library, not ktlint).
+        compiler_plugin_id: optional compiler plugin id for -P plugin:<id>:<opt> options.
+        compiler_plugin_options: optional key=value options forwarded to the compiler plugin.
+        compiler_plugin_runtime: optional full (non-ijar) runtime jars for the compiler plugin, placed on the compile classpath and propagated at runtime.
         **kwargs: additional arguments forwarded to the underlying rules.
     """
     core_kt_jvm_library(
@@ -44,6 +48,10 @@ def kt_bootstrap_library(name, deps = [], neverlink_deps = [], srcs = [], visibi
         visibility = visibility,
         deps = deps + ["%s_neverlink" % name],
         kotlinc_opts = kotlinc_opts,
+        compiler_plugin_classpath = compiler_plugin_classpath,
+        compiler_plugin_id = compiler_plugin_id,
+        compiler_plugin_options = compiler_plugin_options,
+        compiler_plugin_runtime = compiler_plugin_runtime,
         **kwargs
     )
 

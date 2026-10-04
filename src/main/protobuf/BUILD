@@ -14,21 +14,9 @@ java_proto_library(
     deps = [":deps_proto"],
 )
 
-proto_library(
-    name = "kotlin_model_proto",
-    srcs = [":kotlin_model.proto"],
-    visibility = ["//visibility:public"],
-)
-
-java_proto_library(
-    name = "kotlin_model_java_proto",
-    deps = [":kotlin_model_proto"],
-)
-
 java_library(
     name = "protobuf",
     exports = [
         ":deps_java_proto",
-        ":kotlin_model_java_proto",
     ],
 )

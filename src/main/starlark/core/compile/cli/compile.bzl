@@ -20,7 +20,10 @@ def compile_kotlin_for_jvm(
         path_separator,
         toolchain_info,
         kotlinc_opts,
-        output_srcjar = None):
+        output_srcjar = None,
+        compiler_plugin_classpath = [],
+        compiler_plugin_id = "",
+        compiler_plugin_options = []):
     """Compiles Kotlin sources for the JVM into a class jar and optional source jar.
 
     Args:
@@ -33,6 +36,9 @@ def compile_kotlin_for_jvm(
         toolchain_info: the resolved Kotlin toolchain info.
         kotlinc_opts: the kotlinc options applied to the compilation.
         output_srcjar: the optional declared output source jar.
+        compiler_plugin_classpath: optional compiler plugin jars loaded via -Xplugin.
+        compiler_plugin_id: optional compiler plugin id used for -P plugin:<id>:<opt> options.
+        compiler_plugin_options: optional key=value options forwarded to the compiler plugin.
     """
     if not srcs:
         # still gotta create the jars for keep bazel haps.
@@ -62,13 +68,17 @@ def compile_kotlin_for_jvm(
     args.add("-language-version", toolchain_info.language_version)
     args.add("-module-name", module_name)
     args.add_joined("-cp", classpath, join_with = path_separator)
+    for plugin_jar in compiler_plugin_classpath:
+        args.add("-Xplugin=%s" % plugin_jar.path)
+    for plugin_option in compiler_plugin_options:
+        args.add("-P", "plugin:%s:%s" % (compiler_plugin_id, plugin_option))
     args.add_all(kotlinc_opts)
     args.add_all(srcs)
 
     actions.run(
         outputs = [class_jar],
         executable = toolchain_info.kotlinc,
-        inputs = depset(direct = srcs, transitive = [classpath, toolchain_info.java_runtime.files]),
+        inputs = depset(direct = srcs + compiler_plugin_classpath, transitive = [classpath, toolchain_info.java_runtime.files]),
         arguments = [args],
         mnemonic = toolchain_info.compile_mnemonic,
         toolchain = TYPE,

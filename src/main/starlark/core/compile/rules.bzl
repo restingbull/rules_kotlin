@@ -59,6 +59,24 @@ _COMMON_ATTRS = {
         default = [],
         allow_files = [".kt", ".java"],
     ),
+    "compiler_plugin_classpath": attr.label_list(
+        doc = "Compiler plugin jars passed to kotlinc via -Xplugin. Optional; defaulted empty so existing targets are unchanged.",
+        default = [],
+        allow_files = True,
+    ),
+    "compiler_plugin_id": attr.string(
+        doc = "Compiler plugin id used when emitting -P plugin:<id>:<key=value> options.",
+        default = "",
+    ),
+    "compiler_plugin_options": attr.string_list(
+        doc = "key=value options forwarded to the compiler plugin via -P.",
+        default = [],
+    ),
+    "compiler_plugin_runtime": attr.label_list(
+        doc = "Full (non-ijar) runtime jars required by the compiler plugin's generated code and its version check; placed on the compile classpath and propagated at runtime. Optional; defaulted empty.",
+        default = [],
+        allow_files = True,
+    ),
 }
 
 def _kt_jvm_library_impl(ctx):
@@ -66,6 +84,14 @@ def _kt_jvm_library_impl(ctx):
     class_jar = ctx.outputs.class_jar
     source_jar = ctx.outputs.source_jar
     java_info_deps = [d[JavaInfo] for d in ctx.attr.deps if JavaInfo in d]
+
+    # Full (non-ijar) jars required by the compiler plugin's generated code and its runtime version
+    # check. Wrapped as JavaInfo with compile_jar == output_jar so the un-ijarred file lands on both
+    # the compile classpath (via dep_jars) and the transitive runtime classpath.
+    java_info_deps = java_info_deps + [
+        JavaInfo(output_jar = f, compile_jar = f)
+        for f in ctx.files.compiler_plugin_runtime
+    ]
     module_name = ctx.attr.module_name or str(ctx.label).lstrip("/").replace("/", "_").replace(":", "-").replace("@", "")
     kt_tools.compile(
         actions = ctx.actions,
@@ -76,6 +102,9 @@ def _kt_jvm_library_impl(ctx):
         module_name = module_name,
         path_separator = ctx.configuration.host_path_separator,
         kotlinc_opts = ctx.attr.kotlinc_opts,
+        compiler_plugin_classpath = ctx.files.compiler_plugin_classpath,
+        compiler_plugin_id = ctx.attr.compiler_plugin_id,
+        compiler_plugin_options = ctx.attr.compiler_plugin_options,
     )
 
     java_info = JavaInfo(
@@ -111,7 +140,7 @@ def _kt_jvm_library_impl(ctx):
             files = depset([class_jar]),
             runfiles = ctx.runfiles(
                 # explicitly include data files, otherwise they appear to be missing
-                files = ctx.files.data,
+                files = ctx.files.data + ctx.files.compiler_plugin_runtime,
             ).merge_all([
                 d[DefaultInfo].default_runfiles
                 for d in ctx.attr.deps + ctx.attr.exports + ctx.attr.data + ctx.attr.runtime_deps
