@@ -1,0 +1,12 @@
+load("//kotlin:jvm.bzl", "kt_jvm_test")
+
+kt_jvm_test(
+    name = "ModelTest",
+    size = "small",
+    srcs = ["ModelTest.kt"],
+    test_class = "io.bazel.kotlin.model.ModelTest",
+    deps = [
+        "//src/main/kotlin/io/bazel/kotlin/model",
+        "@kotlin_rules_maven_test//:junit_junit",
+    ],
+)
