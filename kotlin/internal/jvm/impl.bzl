@@ -13,7 +13,6 @@
 # limitations under the License.
 """Rule implementations for Kotlin/JVM rules."""
 
-load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@rules_java//java:defs.bzl", "JavaInfo", "JavaPluginInfo", "java_common")
 load(
     "//kotlin/internal:defs.bzl",
@@ -23,253 +22,26 @@ load(
     _TOOLCHAIN_TYPE = "TOOLCHAIN_TYPE",
 )
 load(
-    "//kotlin/internal/jvm:compile.bzl",
-    _compile = "compile",
+    "//kotlin/internal/jvm:pipelines.bzl",
+    _BINARY_PROCESSING_PIPELINE = "BINARY_PROCESSING_PIPELINE",
+    _LIBRARY_PROCESSING_PIPELINE = "LIBRARY_PROCESSING_PIPELINE",
+    _TEST_PROCESSING_PIPELINE = "TEST_PROCESSING_PIPELINE",
 )
 load(
     "//kotlin/internal/utils:utils.bzl",
     _utils = "utils",
 )
 load(
-    "//src/main/starlark/core/compile:common.bzl",
-    "find_launcher_maker",
-    "get_executable",
-    "get_launcher_maker_toolchain_for_action",
-    "is_windows",
-)
-load(
     "//src/main/starlark/core/pipeline:pipeline.bzl",
-    _ProviderInfo = "ProviderInfo",
     _processing_pipeline = "processing_pipeline",
 )
 load("//src/main/starlark/core/plugin:common.bzl", "plugin_common")
 load("//third_party:jarjar.bzl", "jarjar_action")
 
-def _artifact_short_path(artifact):
-    return artifact.short_path
-
-def _make_providers(ctx, providers, runfiles_targets, transitive_files = depset(order = "default"), executable = None, *additional_providers):
-    files = [ctx.outputs.jar]
-    if providers.java.outputs.jdeps:
-        files.append(providers.java.outputs.jdeps)
-
-    return [
-        providers.java,
-        providers.kt,
-        providers.instrumented_files,
-        DefaultInfo(
-            files = depset(files),
-            runfiles = ctx.runfiles(
-                files = ctx.files.data,
-                transitive_files = transitive_files,
-            ).merge_all([
-                d[DefaultInfo].default_runfiles
-                for d in runfiles_targets
-                if DefaultInfo in d and d[DefaultInfo].default_runfiles
-            ]),
-            executable = executable,
-        ),
-    ] + list(additional_providers)
-
-def _expand_env(ctx):
-    return {
-        key: ctx.expand_make_variables(
-            "env",
-            ctx.expand_location(value, ctx.attr.data),
-            {},
-        )
-        for key, value in ctx.attr.env.items()
-    }
-
-def _is_absolute_target_platform_path(ctx, path):
-    """Check if path is absolute, accounting for Windows drive letters."""
-    if is_windows(ctx):
-        return len(path) > 2 and path[1] == ":"
-    return path.startswith("/")
-
-def _create_windows_exe_launcher(ctx, executable, java_executable, classpath, main_class, jvm_flags_for_launcher, runfiles_enabled, coverage_main_class = None):
-    """Create a Windows exe launcher using the launcher_maker tool."""
-    java_runtime = ctx.toolchains["@bazel_tools//tools/jdk:runtime_toolchain_type"].java_runtime
-
-    # Tokenize JVM flags for Windows launcher (handles quoted arguments properly)
-    tokenized_jvm_flags = []
-    for flag in jvm_flags_for_launcher:
-        tokenized_jvm_flags.extend(ctx.tokenize(flag))
-
-    launch_info = ctx.actions.args().use_param_file("%s", use_always = True).set_param_file_format("multiline")
-    launch_info.add("binary_type=Java")
-    launch_info.add(ctx.workspace_name, format = "workspace_name=%s")
-    launch_info.add("1" if runfiles_enabled else "0", format = "symlink_runfiles_enabled=%s")
-    launch_info.add(java_executable, format = "java_bin_path=%s")
-    launch_info.add(main_class, format = "java_start_class=%s")
-    if coverage_main_class:
-        launch_info.add(coverage_main_class, format = "jacoco_main_class=%s")
-    launch_info.add_joined(
-        classpath,
-        map_each = _artifact_short_path,
-        join_with = ";",
-        format_joined = "classpath=%s",
-        omit_if_empty = False,
-    )
-    launch_info.add_joined(tokenized_jvm_flags, join_with = "\t", format_joined = "jvm_flags=%s", omit_if_empty = False)
-
-    # Use java_home_runfiles_path directly (same as rules_java)
-    launch_info.add(java_runtime.java_home_runfiles_path, format = "jar_bin_path=%s/bin/jar.exe")
-
-    launcher_artifact = ctx.executable._launcher
-    ctx.actions.run(
-        executable = find_launcher_maker(ctx),
-        inputs = [launcher_artifact],
-        outputs = [executable],
-        arguments = [launcher_artifact.path, launch_info, executable.path],
-        use_default_shell_env = True,
-        toolchain = get_launcher_maker_toolchain_for_action(),
-        mnemonic = "JavaLauncherMaker",
-    )
-
-def _write_launcher_action(ctx, rjars, main_class, jvm_flags, is_test = False):
-    """Writes out a launcher shell script for a java target.
-
-      Args:
-        ctx: the rule context used to declare the launcher file and read toolchains.
-        rjars: All of the runtime jars required to launch this java target.
-        main_class: the main class to launch.
-        jvm_flags: The flags that should be passed to the jvm.
-        is_test: Whether this is a test target (enables security manager for test runner).
-      Returns:
-        A struct with:
-          - coverage_metadata: List of coverage metadata files (may be empty)
-          - executable: The declared executable file (only set on Windows, None otherwise)
-    """
-    java_runtime = ctx.toolchains["@bazel_tools//tools/jdk:runtime_toolchain_type"].java_runtime
-    java_bin_path = java_runtime.java_executable_runfiles_path
-
-    # Normalize java_bin_path (same logic as rules_java's _get_java_executable)
-    if not _is_absolute_target_platform_path(ctx, java_bin_path):
-        java_bin_path = ctx.workspace_name + "/" + java_bin_path
-    java_bin_path = paths.normalize(java_bin_path)
-
-    # Following rules_java: enable security manager for tests on Java 17-23
-    # See https://github.com/bazelbuild/rules_java/blob/7ff9193af58807c9b77f3b7cd56063c9b8a9f028/java/bazel/rules/bazel_java_binary.bzl#L78-L81
-    _java_runtime_version = getattr(java_runtime, "version", 0)
-    jvm_flags_list = [ctx.expand_location(f, ctx.attr.data) for f in jvm_flags]
-    if is_test and _java_runtime_version >= 17 and _java_runtime_version < 24:
-        jvm_flags_list.append("-Djava.security.manager=allow")
-
-    # Windows: use native exe launcher with explicitly declared executable
-    if is_windows(ctx):
-        # Explicitly declare the executable with .exe extension (required for Windows)
-        executable = get_executable(ctx)
-
-        # On Windows, symlink runfiles are typically disabled (manifest-based runfiles are used instead).
-        # ctx.configuration.runfiles_enabled() is internal to rules_java and not available here.
-        runfiles_enabled = True
-        coverage_enabled = ctx.configuration.coverage_enabled
-        if coverage_enabled:
-            jacocorunner = ctx.toolchains[_TOOLCHAIN_TYPE].jacocorunner
-            classpath = rjars.to_list() + jacocorunner.files.to_list()
-            jacoco_metadata_file = ctx.actions.declare_file(
-                "%s.jacoco_metadata.txt" % ctx.attr.name,
-                sibling = executable,
-            )
-            ctx.actions.write(jacoco_metadata_file, "\n".join([
-                jar.short_path.replace("../", "external/")
-                for jar in rjars.to_list()
-            ]))
-            jvm_flags_list.extend([
-                "-ea",
-                "-Dbazel.test_suite=" + main_class,
-            ])
-            _create_windows_exe_launcher(
-                ctx,
-                executable = executable,
-                java_executable = java_bin_path,
-                classpath = classpath,
-                main_class = "com.google.testing.coverage.JacocoCoverageRunner",
-                jvm_flags_for_launcher = jvm_flags_list,
-                runfiles_enabled = runfiles_enabled,
-                coverage_main_class = main_class,
-            )
-            return struct(coverage_metadata = [jacoco_metadata_file], executable = executable)
-
-        _create_windows_exe_launcher(
-            ctx,
-            executable = executable,
-            java_executable = java_bin_path,
-            classpath = rjars.to_list(),
-            main_class = main_class,
-            jvm_flags_for_launcher = jvm_flags_list,
-            runfiles_enabled = runfiles_enabled,
-        )
-        return struct(coverage_metadata = [], executable = executable)
-
-    # Unix: use shell script template
-    jvm_flags_str = " ".join(jvm_flags_list)
-    template = ctx.attr.java_stub_template.files.to_list()[0]
-
-    # Construct JAVABIN substitution with ${JAVA_RUNFILES}/ prefix for relative paths
-    # This works in both runfiles-enabled and manifest-only modes
-    prefix = "" if _is_absolute_target_platform_path(ctx, java_bin_path) else "${JAVA_RUNFILES}/"
-    java_bin = "JAVABIN=${JAVABIN:-" + prefix + java_bin_path + "}"
-
-    if ctx.configuration.coverage_enabled:
-        jacocorunner = ctx.toolchains[_TOOLCHAIN_TYPE].jacocorunner
-        classpath = ctx.configuration.host_path_separator.join(
-            ["${RUNPATH}%s" % (j.short_path) for j in rjars.to_list() + jacocorunner.files.to_list()],
-        )
-        jacoco_metadata_file = ctx.actions.declare_file(
-            "%s.jacoco_metadata.txt" % ctx.attr.name,
-            sibling = ctx.outputs.executable,
-        )
-        ctx.actions.write(jacoco_metadata_file, "\n".join([
-            jar.short_path.replace("../", "external/")
-            for jar in rjars.to_list()
-        ]))
-        ctx.actions.expand_template(
-            template = template,
-            output = ctx.outputs.executable,
-            substitutions = {
-                "%classpath%": classpath,
-                "%java_start_class%": "com.google.testing.coverage.JacocoCoverageRunner",
-                "%javabin%": java_bin,
-                "%jvm_flags%": jvm_flags_str,
-                "%needs_runfiles%": "0" if _is_absolute_target_platform_path(ctx, java_runtime.java_executable_exec_path) else "1",
-                "%runfiles_manifest_only%": "",
-                "%set_jacoco_java_runfiles_root%": """export JACOCO_JAVA_RUNFILES_ROOT=$JAVA_RUNFILES/{}/""".format(ctx.workspace_name),
-                "%set_jacoco_main_class%": """export JACOCO_MAIN_CLASS={}""".format(main_class),
-                "%set_jacoco_metadata%": "export JACOCO_METADATA_JAR=\"$JAVA_RUNFILES/{}/{}\"".format(ctx.workspace_name, jacoco_metadata_file.short_path),
-                "%set_java_coverage_new_implementation%": """export JAVA_COVERAGE_NEW_IMPLEMENTATION=YES""",
-                "%test_runtime_classpath_file%": "export TEST_RUNTIME_CLASSPATH_FILE=${JAVA_RUNFILES}",
-                "%workspace_prefix%": ctx.workspace_name + "/",
-            },
-            is_executable = True,
-        )
-        return struct(coverage_metadata = [jacoco_metadata_file], executable = None)
-
-    classpath = ctx.configuration.host_path_separator.join(
-        ["${RUNPATH}%s" % (j.short_path) for j in rjars.to_list()],
-    )
-
-    ctx.actions.expand_template(
-        template = template,
-        output = ctx.outputs.executable,
-        substitutions = {
-            "%classpath%": classpath,
-            "%java_start_class%": main_class,
-            "%javabin%": java_bin,
-            "%jvm_flags%": jvm_flags_str,
-            "%needs_runfiles%": "0" if _is_absolute_target_platform_path(ctx, java_runtime.java_executable_exec_path) else "1",
-            "%runfiles_manifest_only%": "",
-            "%set_jacoco_java_runfiles_root%": "",
-            "%set_jacoco_main_class%": "",
-            "%set_jacoco_metadata%": "",
-            "%set_java_coverage_new_implementation%": """export JAVA_COVERAGE_NEW_IMPLEMENTATION=NO""",
-            "%test_runtime_classpath_file%": "export TEST_RUNTIME_CLASSPATH_FILE=${JAVA_RUNFILES}",
-            "%workspace_prefix%": ctx.workspace_name + "/",
-        },
-        is_executable = True,
-    )
-    return struct(coverage_metadata = [], executable = None)
+# buildifier: disable=unused-variable
+def _is_source_jar_stub(jar):
+    """Workaround for intellij plugin expecting a source jar"""
+    return jar.path.endswith("third_party/empty.jar")
 
 def _unify_jars(ctx):
     if bool(ctx.attr.jar):
@@ -348,115 +120,6 @@ def kt_jvm_import_impl(ctx):
         kt_info,
     ]
 
-def _process_deps(context):
-    """Collect the deps, exports, runtime_deps and data targets that contribute runfiles."""
-    ctx = context.ctx
-    return _ProviderInfo(
-        name = "DepsProcessor",
-        value = ctx.attr.deps + getattr(ctx.attr, "exports", []) + ctx.attr.runtime_deps + ctx.attr.data,
-        runfiles = None,
-    )
-
-def _process_compile(context):
-    """Run the JVM compile engine for the library, or emit export-only providers when it has no jar."""
-    ctx = context.ctx
-    providers = _compile.kt_jvm_produce_jar_actions(ctx, "kt_jvm_library") if ctx.attr.srcs or ctx.attr.resources else _compile.export_only_providers(
-        ctx = ctx,
-        actions = ctx.actions,
-        outputs = ctx.outputs,
-        attr = ctx.attr,
-    )
-    return _ProviderInfo(
-        name = "JvmCompileProcessor",
-        value = providers,
-        runfiles = None,
-    )
-
-def _finalize_library(context):
-    """Assemble the kt_jvm_library providers from the accumulated processor results."""
-    return _make_providers(
-        context.ctx,
-        providers = context.outputs["JvmCompileProcessor"],
-        runfiles_targets = context.outputs["DepsProcessor"],
-    )
-
-def base_library_pipeline():
-    """The kt_jvm_library processor chain: collect deps, run compile, finalize the providers."""
-    return _processing_pipeline.make_processing_pipeline(
-        processors = {
-            "DepsProcessor": _process_deps,
-            "JvmCompileProcessor": _process_compile,
-        },
-        finalize = _finalize_library,
-    )
-
-def _process_binary_compile(context):
-    """Run the JVM compile engine for the binary with rule_kind "kt_jvm_binary"."""
-    ctx = context.ctx
-    return _ProviderInfo(
-        name = "JvmCompileProcessor",
-        value = _compile.kt_jvm_produce_jar_actions(ctx, "kt_jvm_binary"),
-        runfiles = None,
-    )
-
-def _process_binary_launcher(context):
-    """Build the binary launcher and collect its executable and runtime-jar runfiles."""
-    ctx = context.ctx
-    providers = context.outputs["JvmCompileProcessor"]
-    jvm_flags = []
-    if hasattr(ctx.fragments.java, "default_jvm_opts"):
-        jvm_flags = ctx.fragments.java.default_jvm_opts
-    jvm_flags.extend(ctx.attr.jvm_flags)
-    launcher_result = _write_launcher_action(
-        ctx,
-        providers.java.transitive_runtime_jars,
-        ctx.attr.main_class,
-        jvm_flags,
-    )
-
-    # Java runtime files are needed in runfiles for the (Windows) launcher.
-    java_runtime = ctx.toolchains["@bazel_tools//tools/jdk:runtime_toolchain_type"].java_runtime
-    return _ProviderInfo(
-        name = "LauncherProcessor",
-        value = struct(
-            executable = launcher_result.executable,
-            transitive_files = depset(
-                order = "default",
-                transitive = [providers.java.transitive_runtime_jars, java_runtime.files],
-            ),
-        ),
-        runfiles = None,
-    )
-
-def _finalize_binary(context):
-    """Assemble the kt_jvm_binary providers: DefaultInfo with the launcher plus RunEnvironmentInfo."""
-    ctx = context.ctx
-    launcher = context.outputs["LauncherProcessor"]
-    return _make_providers(
-        ctx,
-        context.outputs["JvmCompileProcessor"],
-        context.outputs["DepsProcessor"],
-        launcher.transitive_files,
-        launcher.executable,
-        RunEnvironmentInfo(
-            environment = _expand_env(ctx),
-            inherited_environment = ctx.attr.env_inherit,
-        ),
-    )
-
-def base_binary_pipeline():
-    """The kt_jvm_binary chain: the library chain with a binary compile processor and a launcher phase."""
-    return _processing_pipeline.make_processing_pipeline(
-        processors = _processing_pipeline.append(
-            _processing_pipeline.replace(
-                base_library_pipeline().processors,
-                JvmCompileProcessor = _process_binary_compile,
-            ),
-            LauncherProcessor = _process_binary_launcher,
-        ),
-        finalize = _finalize_binary,
-    )
-
 def kt_jvm_library_impl(ctx):
     """Implements the kt_jvm_library rule.
 
@@ -484,7 +147,7 @@ def kt_jvm_library_impl(ctx):
     return _processing_pipeline.run(
         ctx = ctx,
         java_package = None,
-        pipeline = base_library_pipeline(),
+        pipeline = _LIBRARY_PROCESSING_PIPELINE,
     )
 
 def kt_jvm_binary_impl(ctx):
@@ -501,110 +164,7 @@ def kt_jvm_binary_impl(ctx):
     return _processing_pipeline.run(
         ctx = ctx,
         java_package = None,
-        pipeline = base_binary_pipeline(),
-    )
-
-_SPLIT_STRINGS = [
-    "src/test/java/",
-    "src/test/kotlin/",
-    "javatests/",
-    "kotlin/",
-    "java/",
-    "test/",
-]
-
-def _process_test_compile(context):
-    """Run the JVM compile engine for the test with rule_kind "kt_jvm_test"."""
-    ctx = context.ctx
-    return _ProviderInfo(
-        name = "JvmCompileProcessor",
-        value = _compile.kt_jvm_produce_jar_actions(ctx, "kt_jvm_test"),
-        runfiles = None,
-    )
-
-def _infer_test_class(ctx):
-    """Return the explicit test_class, else best-effort infer one from the srcs."""
-    test_class = ctx.attr.test_class
-    if not bool(ctx.attr.test_class):
-        for file in ctx.files.srcs:
-            package_relative_path = file.path.replace(ctx.label.package + "/", "")
-            if package_relative_path.split(".")[0] == ctx.attr.name:
-                for splitter in _SPLIT_STRINGS:
-                    elements = file.short_path.split(splitter, 1)
-                    if len(elements) == 2:
-                        test_class = elements[1].split(".")[0].replace("/", ".")
-                        break
-    return test_class
-
-def _process_test_launcher(context):
-    """Build the coverage-instrumented test launcher and collect its runfiles."""
-    ctx = context.ctx
-    providers = context.outputs["JvmCompileProcessor"]
-    runtime_jars = depset(ctx.files._bazel_test_runner, transitive = [providers.java.transitive_runtime_jars])
-
-    coverage_runfiles = []
-    if ctx.configuration.coverage_enabled:
-        jacocorunner = ctx.toolchains[_TOOLCHAIN_TYPE].jacocorunner
-        coverage_runfiles = jacocorunner.files.to_list()
-
-    test_class = _infer_test_class(ctx)
-
-    jvm_flags = []
-    if hasattr(ctx.fragments.java, "default_jvm_opts"):
-        jvm_flags = ctx.fragments.java.default_jvm_opts
-
-    jvm_flags.extend(ctx.attr.jvm_flags)
-    launcher_result = _write_launcher_action(
-        ctx,
-        runtime_jars,
-        main_class = ctx.attr.main_class,
-        jvm_flags = [
-            "-ea",
-            "-Dbazel.test_suite=%s" % test_class,
-        ] + jvm_flags,
-        is_test = True,
-    )
-
-    # Get java runtime files from toolchain for runfiles (needed for Windows launcher)
-    java_runtime = ctx.toolchains["@bazel_tools//tools/jdk:runtime_toolchain_type"].java_runtime
-
-    return _ProviderInfo(
-        name = "TestLauncherProcessor",
-        value = struct(
-            executable = launcher_result.executable,
-            transitive_files = depset(
-                order = "default",
-                transitive = [runtime_jars, depset(coverage_runfiles), depset(launcher_result.coverage_metadata), java_runtime.files],
-            ),
-        ),
-        runfiles = None,
-    )
-
-def _finalize_test(context):
-    """Assemble the kt_jvm_junit_test providers: DefaultInfo with the launcher plus TestEnvironment."""
-    ctx = context.ctx
-    launcher = context.outputs["TestLauncherProcessor"]
-    return _make_providers(
-        ctx,
-        context.outputs["JvmCompileProcessor"],
-        context.outputs["DepsProcessor"],
-        launcher.transitive_files,
-        launcher.executable,
-        # adds common test variables, including TEST_WORKSPACE.
-        testing.TestEnvironment(environment = _expand_env(ctx), inherited_environment = ctx.attr.env_inherit),
-    )
-
-def base_test_pipeline():
-    """The kt_jvm_junit_test chain: the library chain with a test compile processor and a test-launcher phase."""
-    return _processing_pipeline.make_processing_pipeline(
-        processors = _processing_pipeline.append(
-            _processing_pipeline.replace(
-                base_library_pipeline().processors,
-                JvmCompileProcessor = _process_test_compile,
-            ),
-            TestLauncherProcessor = _process_test_launcher,
-        ),
-        finalize = _finalize_test,
+        pipeline = _BINARY_PROCESSING_PIPELINE,
     )
 
 def kt_jvm_junit_test_impl(ctx):
@@ -619,7 +179,7 @@ def kt_jvm_junit_test_impl(ctx):
     return _processing_pipeline.run(
         ctx = ctx,
         java_package = None,
-        pipeline = base_test_pipeline(),
+        pipeline = _TEST_PROCESSING_PIPELINE,
     )
 
 _KtCompilerPluginClasspathInfo = provider(

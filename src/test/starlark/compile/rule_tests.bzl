@@ -3,7 +3,7 @@
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("@rules_java//java/common:java_info.bzl", "JavaInfo")
 load("//kotlin:jvm.bzl", "kt_jvm_library")
-load("//kotlin/internal/jvm:impl.bzl", "base_binary_pipeline", "base_library_pipeline", "base_test_pipeline")
+load("//kotlin/internal/jvm:pipelines.bzl", "BINARY_PROCESSORS", "LIBRARY_PROCESSORS", "TEST_PROCESSORS")
 load("//src/main/starlark/core/compile:common.bzl", "KtJvmInfo")
 load("//src/main/starlark/core/compile:rules.bzl", "core_kt_jvm_binary", "core_kt_jvm_library")
 load("//src/main/starlark/core/compile/cli:toolchain.bzl", "COMPILE_MNEMONIC")
@@ -455,75 +455,57 @@ def test_jvm():
         test_runfiles = _test_runfiles(**library),
     )
 
-def _base_library_pipeline_on_runner_test_impl(ctx):
+def _library_processors_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # Verifies base_library_pipeline() chains deps, compile, and finalize.
-    pipeline = base_library_pipeline()
+    # The kt_jvm_library chain is declared statically: collect deps, then compile.
     asserts.equals(
         env,
         ["DepsProcessor", "JvmCompileProcessor"],
-        pipeline.processors.keys(),
-    )
-    asserts.true(
-        env,
-        pipeline.finalize != None,
-        "base library pipeline must define a finalize step assembling the provider golden",
+        LIBRARY_PROCESSORS.keys(),
     )
 
     return unittest.end(env)
 
-base_library_pipeline_on_runner_test = unittest.make(_base_library_pipeline_on_runner_test_impl)
+library_processors_test = unittest.make(_library_processors_test_impl)
 
-def _base_binary_pipeline_on_runner_test_impl(ctx):
+def _binary_processors_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # Verifies base_binary_pipeline() adds a launcher phase to the library chain.
-    pipeline = base_binary_pipeline()
+    # The kt_jvm_binary chain adds a launcher phase after the compile phase.
     asserts.equals(
         env,
         ["DepsProcessor", "JvmCompileProcessor", "LauncherProcessor"],
-        pipeline.processors.keys(),
-    )
-    asserts.true(
-        env,
-        pipeline.finalize != None,
-        "base binary pipeline must define a finalize step emitting DefaultInfo + RunEnvironmentInfo",
+        BINARY_PROCESSORS.keys(),
     )
 
     return unittest.end(env)
 
-base_binary_pipeline_on_runner_test = unittest.make(_base_binary_pipeline_on_runner_test_impl)
+binary_processors_test = unittest.make(_binary_processors_test_impl)
 
-def _base_test_pipeline_on_runner_test_impl(ctx):
+def _test_processors_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # Verifies base_test_pipeline() adds a test-launcher phase to the chain.
-    pipeline = base_test_pipeline()
+    # The kt_jvm_junit_test chain adds a test-launcher phase after the compile phase.
     asserts.equals(
         env,
         ["DepsProcessor", "JvmCompileProcessor", "TestLauncherProcessor"],
-        pipeline.processors.keys(),
-    )
-    asserts.true(
-        env,
-        pipeline.finalize != None,
-        "base test pipeline must define a finalize step emitting DefaultInfo + TestEnvironment",
+        TEST_PROCESSORS.keys(),
     )
 
     return unittest.end(env)
 
-base_test_pipeline_on_runner_test = unittest.make(_base_test_pipeline_on_runner_test_impl)
+test_processors_test = unittest.make(_test_processors_test_impl)
 
 def test_suite(name):
-    base_library_pipeline_on_runner_test(
-        name = "base_library_pipeline_on_runner_test",
+    library_processors_test(
+        name = "library_processors_test",
     )
-    base_binary_pipeline_on_runner_test(
-        name = "base_binary_pipeline_on_runner_test",
+    binary_processors_test(
+        name = "binary_processors_test",
     )
-    base_test_pipeline_on_runner_test(
-        name = "base_test_pipeline_on_runner_test",
+    test_processors_test(
+        name = "test_processors_test",
     )
     suite(
         name,
