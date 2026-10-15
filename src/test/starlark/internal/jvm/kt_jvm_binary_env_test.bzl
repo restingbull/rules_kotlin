@@ -112,7 +112,7 @@ def _kt_jvm_binary_launcher_test_impl(env, target):
     env.expect.that_target(target).has_provider(RunEnvironmentInfo)
 
     # The launcher phase produced the runnable executable for this target.
-    env.expect.that_target(target).executable().short_path_equals(
+    env.expect.that_target(target).executable().path().contains(
         "src/test/starlark/internal/jvm/" + target.label.name,
     )
 

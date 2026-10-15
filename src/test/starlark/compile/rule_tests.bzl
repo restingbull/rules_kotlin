@@ -3,6 +3,8 @@
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("@rules_java//java/common:java_info.bzl", "JavaInfo")
 load("//kotlin:jvm.bzl", "kt_jvm_library")
+
+# buildifier: disable=bzl-visibility
 load("//kotlin/internal/jvm:pipelines.bzl", "BINARY_PROCESSORS", "LIBRARY_PROCESSORS", "TEST_PROCESSORS")
 load("//src/main/starlark/core/compile:common.bzl", "KtJvmInfo")
 load("//src/main/starlark/core/compile:rules.bzl", "core_kt_jvm_binary", "core_kt_jvm_library")

@@ -111,16 +111,17 @@ def _create_windows_exe_launcher(ctx, executable, java_executable, classpath, ma
 def write_launcher_action(ctx, rjars, main_class, jvm_flags, is_test = False):
     """Writes out a launcher shell script for a java target.
 
-      Args:
-        ctx: the rule context used to declare the launcher file and read toolchains.
-        rjars: All of the runtime jars required to launch this java target.
-        main_class: the main class to launch.
-        jvm_flags: The flags that should be passed to the jvm.
-        is_test: Whether this is a test target (enables security manager for test runner).
-      Returns:
-        A struct with:
-          - coverage_metadata: List of coverage metadata files (may be empty)
-          - executable: The declared executable file (only set on Windows, None otherwise)
+    Args:
+      ctx: the rule context used to declare the launcher file and read toolchains.
+      rjars: All of the runtime jars required to launch this java target.
+      main_class: the main class to launch.
+      jvm_flags: The flags that should be passed to the jvm.
+      is_test: Whether this is a test target (enables security manager for test runner).
+
+    Returns:
+      A struct with:
+        - coverage_metadata: List of coverage metadata files (may be empty)
+        - executable: The declared executable file (only set on Windows, None otherwise)
     """
     java_runtime = ctx.toolchains["@bazel_tools//tools/jdk:runtime_toolchain_type"].java_runtime
     java_bin_path = java_runtime.java_executable_runfiles_path
@@ -262,7 +263,14 @@ _SPLIT_STRINGS = [
 ]
 
 def infer_test_class(ctx):
-    """Return the explicit test_class, else best-effort infer one from the srcs."""
+    """Return the explicit test_class, else best-effort infer one from the srcs.
+
+    Args:
+      ctx: the rule context, read for attr.test_class, attr.name, files.srcs and label.
+
+    Returns:
+      The test class name as a string, or the empty string if none could be inferred.
+    """
     test_class = ctx.attr.test_class
     if not bool(ctx.attr.test_class):
         for file in ctx.files.srcs:

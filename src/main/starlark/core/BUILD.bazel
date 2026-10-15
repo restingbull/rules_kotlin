@@ -24,8 +24,8 @@ bzl_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//src/main/starlark/core/compile",
+        "//src/main/starlark/core/pipeline",
         "//src/main/starlark/core/plugin",
         "//src/main/starlark/core/repositories",
-        "//src/main/starlark/core/pipeline",
     ],
 )
