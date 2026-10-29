@@ -13,7 +13,9 @@ data class Plugin(
   }
 
   @ModelDsl
-  class Builder(model: Plugin = Plugin()) {
+  class Builder(
+    model: Plugin = Plugin(),
+  ) {
     var id = model.id
     val classpathList = model.classpathList.toMutableList()
     val optionsList = model.optionsList.toMutableList()
@@ -21,31 +23,34 @@ data class Plugin(
 
     fun id(value: String) = apply { id = value }
 
-    fun classpathList(value: List<String>) = apply {
-      val snapshot = value.toList()
-      classpathList.clear()
-      classpathList.addAll(snapshot)
-    }
+    fun classpathList(value: List<String>) =
+      apply {
+        val snapshot = value.toList()
+        classpathList.clear()
+        classpathList.addAll(snapshot)
+      }
 
     fun addClasspath(value: String) = apply { classpathList += value }
 
     fun addAllClasspath(values: Iterable<String>) = apply { classpathList += values }
 
-    fun optionsList(value: List<PluginOption>) = apply {
-      val snapshot = value.toList()
-      optionsList.clear()
-      optionsList.addAll(snapshot)
-    }
+    fun optionsList(value: List<PluginOption>) =
+      apply {
+        val snapshot = value.toList()
+        optionsList.clear()
+        optionsList.addAll(snapshot)
+      }
 
     fun addOptions(value: PluginOption) = apply { optionsList += value }
 
     fun addAllOptions(values: Iterable<PluginOption>) = apply { optionsList += values }
 
-    fun phasesList(value: List<PluginPhase>) = apply {
-      val snapshot = value.toList()
-      phasesList.clear()
-      phasesList.addAll(snapshot)
-    }
+    fun phasesList(value: List<PluginPhase>) =
+      apply {
+        val snapshot = value.toList()
+        phasesList.clear()
+        phasesList.addAll(snapshot)
+      }
 
     fun addPhases(value: PluginPhase) = apply { phasesList += value }
 

@@ -18,7 +18,9 @@ data class Directories(
   }
 
   @ModelDsl
-  class Builder(model: Directories = Directories()) {
+  class Builder(
+    model: Directories = Directories(),
+  ) {
     var classes = model.classes
     var generatedClasses = model.generatedClasses
     var generatedSources = model.generatedSources

@@ -11,7 +11,9 @@ data class PluginOption(
   }
 
   @ModelDsl
-  class Builder(model: PluginOption = PluginOption()) {
+  class Builder(
+    model: PluginOption = PluginOption(),
+  ) {
     var key = model.key
     var value = model.value
 

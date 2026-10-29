@@ -13,7 +13,9 @@ data class KotlinToolchainInfo(
   }
 
   @ModelDsl
-  class Builder(model: KotlinToolchainInfo = KotlinToolchainInfo()) {
+  class Builder(
+    model: KotlinToolchainInfo = KotlinToolchainInfo(),
+  ) {
     var common = model.common
     var jvm = model.jvm
     var btapi = model.btapi

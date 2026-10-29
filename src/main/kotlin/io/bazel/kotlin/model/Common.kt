@@ -12,7 +12,9 @@ data class Common(
   }
 
   @ModelDsl
-  class Builder(model: Common = Common()) {
+  class Builder(
+    model: Common = Common(),
+  ) {
     var languageVersion = model.languageVersion
     var apiVersion = model.apiVersion
     var coroutines = model.coroutines

@@ -16,7 +16,9 @@ data class JvmCompilationTask(
   }
 
   @ModelDsl
-  class Builder(model: JvmCompilationTask = JvmCompilationTask()) {
+  class Builder(
+    model: JvmCompilationTask = JvmCompilationTask(),
+  ) {
     var info = model.info
     var directories = model.directories
     var outputs = model.outputs

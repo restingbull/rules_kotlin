@@ -18,7 +18,9 @@ data class Outputs(
   }
 
   @ModelDsl
-  class Builder(model: Outputs = Outputs()) {
+  class Builder(
+    model: Outputs = Outputs(),
+  ) {
     var jar = model.jar
     var jdeps = model.jdeps
     var srcjar = model.srcjar

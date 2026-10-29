@@ -278,20 +278,22 @@ class KotlinBuilder(
       }
       inputs {
         pluginsList +=
-          argMap.optional(KotlinBuilderFlags.PLUGINS_PAYLOAD)
+          argMap
+            .optional(KotlinBuilderFlags.PLUGINS_PAYLOAD)
             ?.singleOrNull()
             ?.let(PluginsPayloadParser::parse)
             .orEmpty()
 
         // Expand structured plugins into the legacy per-phase compiler arguments.
         for (plugin in pluginsList) {
-          val optionStrings = plugin.optionsList.map { option ->
-            if (option.value.isEmpty()) {
-              "${plugin.id}:${option.key}"
-            } else {
-              "${plugin.id}:${option.key}=${option.value}"
+          val optionStrings =
+            plugin.optionsList.map { option ->
+              if (option.value.isEmpty()) {
+                "${plugin.id}:${option.key}"
+              } else {
+                "${plugin.id}:${option.key}=${option.value}"
+              }
             }
-          }
           if (PluginPhase.PLUGIN_PHASE_STUBS in plugin.phasesList) {
             stubsPluginClasspathList += plugin.classpathList
             stubsPluginOptionsList += optionStrings

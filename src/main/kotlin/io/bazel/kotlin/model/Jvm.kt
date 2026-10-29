@@ -10,7 +10,9 @@ data class Jvm(
   }
 
   @ModelDsl
-  class Builder(model: Jvm = Jvm()) {
+  class Builder(
+    model: Jvm = Jvm(),
+  ) {
     var jvmTarget = model.jvmTarget
 
     fun jvmTarget(value: String) = apply { jvmTarget = value }

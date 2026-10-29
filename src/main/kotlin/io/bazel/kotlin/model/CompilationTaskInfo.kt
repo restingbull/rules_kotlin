@@ -26,7 +26,9 @@ data class CompilationTaskInfo(
   }
 
   @ModelDsl
-  class Builder(model: CompilationTaskInfo = CompilationTaskInfo()) {
+  class Builder(
+    model: CompilationTaskInfo = CompilationTaskInfo(),
+  ) {
     var label = model.label
     var platform = model.platform
     var ruleKind = model.ruleKind
@@ -52,11 +54,12 @@ data class CompilationTaskInfo(
 
     fun moduleName(value: String) = apply { moduleName = value }
 
-    fun passthroughFlagsList(value: List<String>) = apply {
-      val snapshot = value.toList()
-      passthroughFlagsList.clear()
-      passthroughFlagsList.addAll(snapshot)
-    }
+    fun passthroughFlagsList(value: List<String>) =
+      apply {
+        val snapshot = value.toList()
+        passthroughFlagsList.clear()
+        passthroughFlagsList.addAll(snapshot)
+      }
 
     fun addPassthroughFlags(value: String) = apply { passthroughFlagsList += value }
 
@@ -69,11 +72,12 @@ data class CompilationTaskInfo(
       toolchainInfo = KotlinToolchainInfo.Builder(toolchainInfo).apply(block).build()
     }
 
-    fun friendPathsList(value: List<String>) = apply {
-      val snapshot = value.toList()
-      friendPathsList.clear()
-      friendPathsList.addAll(snapshot)
-    }
+    fun friendPathsList(value: List<String>) =
+      apply {
+        val snapshot = value.toList()
+        friendPathsList.clear()
+        friendPathsList.addAll(snapshot)
+      }
 
     fun addFriendPaths(value: String) = apply { friendPathsList += value }
 
@@ -81,11 +85,12 @@ data class CompilationTaskInfo(
 
     fun primaryOutputPath(value: String) = apply { primaryOutputPath = value }
 
-    fun debugList(value: List<String>) = apply {
-      val snapshot = value.toList()
-      debugList.clear()
-      debugList.addAll(snapshot)
-    }
+    fun debugList(value: List<String>) =
+      apply {
+        val snapshot = value.toList()
+        debugList.clear()
+        debugList.addAll(snapshot)
+      }
 
     fun addDebug(value: String) = apply { debugList += value }
 

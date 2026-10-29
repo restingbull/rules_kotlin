@@ -14,49 +14,55 @@ data class BtapiRuntime(
   }
 
   @ModelDsl
-  class Builder(model: BtapiRuntime = BtapiRuntime()) {
+  class Builder(
+    model: BtapiRuntime = BtapiRuntime(),
+  ) {
     val apiImplClasspathList = model.apiImplClasspathList.toMutableList()
     val jvmAbiGenClasspathList = model.jvmAbiGenClasspathList.toMutableList()
     val kaptClasspathList = model.kaptClasspathList.toMutableList()
     val jdepsGenClasspathList = model.jdepsGenClasspathList.toMutableList()
     var classpathFingerprint = model.classpathFingerprint
 
-    fun apiImplClasspathList(value: List<String>) = apply {
-      val snapshot = value.toList()
-      apiImplClasspathList.clear()
-      apiImplClasspathList.addAll(snapshot)
-    }
+    fun apiImplClasspathList(value: List<String>) =
+      apply {
+        val snapshot = value.toList()
+        apiImplClasspathList.clear()
+        apiImplClasspathList.addAll(snapshot)
+      }
 
     fun addApiImplClasspath(value: String) = apply { apiImplClasspathList += value }
 
     fun addAllApiImplClasspath(values: Iterable<String>) = apply { apiImplClasspathList += values }
 
-    fun jvmAbiGenClasspathList(value: List<String>) = apply {
-      val snapshot = value.toList()
-      jvmAbiGenClasspathList.clear()
-      jvmAbiGenClasspathList.addAll(snapshot)
-    }
+    fun jvmAbiGenClasspathList(value: List<String>) =
+      apply {
+        val snapshot = value.toList()
+        jvmAbiGenClasspathList.clear()
+        jvmAbiGenClasspathList.addAll(snapshot)
+      }
 
     fun addJvmAbiGenClasspath(value: String) = apply { jvmAbiGenClasspathList += value }
 
     fun addAllJvmAbiGenClasspath(values: Iterable<String>) =
       apply { jvmAbiGenClasspathList += values }
 
-    fun kaptClasspathList(value: List<String>) = apply {
-      val snapshot = value.toList()
-      kaptClasspathList.clear()
-      kaptClasspathList.addAll(snapshot)
-    }
+    fun kaptClasspathList(value: List<String>) =
+      apply {
+        val snapshot = value.toList()
+        kaptClasspathList.clear()
+        kaptClasspathList.addAll(snapshot)
+      }
 
     fun addKaptClasspath(value: String) = apply { kaptClasspathList += value }
 
     fun addAllKaptClasspath(values: Iterable<String>) = apply { kaptClasspathList += values }
 
-    fun jdepsGenClasspathList(value: List<String>) = apply {
-      val snapshot = value.toList()
-      jdepsGenClasspathList.clear()
-      jdepsGenClasspathList.addAll(snapshot)
-    }
+    fun jdepsGenClasspathList(value: List<String>) =
+      apply {
+        val snapshot = value.toList()
+        jdepsGenClasspathList.clear()
+        jdepsGenClasspathList.addAll(snapshot)
+      }
 
     fun addJdepsGenClasspath(value: String) = apply { jdepsGenClasspathList += value }
 
